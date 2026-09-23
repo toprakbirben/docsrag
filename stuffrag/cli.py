@@ -46,3 +46,18 @@ def _index(cfg_name: str) -> None:
 def index_cmd(config_name: str = typer.Option("baseline", "--config")) -> None:
     """Chunk + embed documents for a pipeline config (idempotent)."""
     _index(config_name)
+
+
+@app.command()
+def ask(question: str, config_name: str = typer.Option("baseline", "--config")) -> None:
+    """Answer a question from indexed sources, with citations."""
+    from stuffrag import generate
+
+    with db.connect() as conn:
+        answer = generate.ask(conn, question, config.get(config_name))
+    typer.echo(answer.text)
+    by_id = {h.chunk_id: h for h in answer.hits}
+    if answer.citations:
+        typer.echo("\nSources:")
+        for cid in answer.citations:
+            typer.echo(f"  [c{cid}] {by_id[cid].document_id}")
