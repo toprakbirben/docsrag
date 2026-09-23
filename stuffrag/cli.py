@@ -1,10 +1,13 @@
 import typer
+from pathlib import Path
 
 from stuffrag import config, db
 
 app = typer.Typer(no_args_is_help=True)
 db_app = typer.Typer()
 app.add_typer(db_app, name="db")
+eval_app = typer.Typer()
+app.add_typer(eval_app, name="eval")
 
 
 @db_app.command("init")
@@ -61,3 +64,24 @@ def ask(question: str, config_name: str = typer.Option("baseline", "--config")) 
         typer.echo("\nSources:")
         for cid in answer.citations:
             typer.echo(f"  [c{cid}] {by_id[cid].document_id}")
+
+
+@eval_app.command("run")
+def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
+    """Run all eval questions through a pipeline config and record metrics."""
+    from stuffrag import evals
+    import json
+
+    with db.connect() as conn:
+        path = evals.run(conn, config.get(config_name), evals.load_questions())
+    typer.echo(f"{path}\n{json.dumps(json.loads(path.read_text())['metrics'], indent=2)}")
+
+
+@eval_app.command("compare")
+def eval_compare(run_a: Path, run_b: Path) -> None:
+    """Print metric deltas between two run files (B - A)."""
+    import json
+    from stuffrag import evals
+
+    for line in evals.compare(json.loads(run_a.read_text()), json.loads(run_b.read_text())):
+        typer.echo(line)
