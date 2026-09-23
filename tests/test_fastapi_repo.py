@@ -10,10 +10,14 @@ def make_repo(tmp_path: Path) -> Path:
     (tmp_path / "docs/en/docs/tutorial/deps.md").write_text(
         "# Deps with yield\n\n"
         "{* ../../docs_src/deps/tutorial008.py hl[2] *}\n\n"
-        # mkdocs-include-markdown variant with a space after {*, seen in real FastAPI docs
-        "{!../../docs_src/deps/tutorial008.py!}\n\n"
-        # the {!> ...!} variant (note the '>'), also used throughout the real docs
-        "{!> ../../docs_src/deps/tutorial008.py!}\n\n"
+        # {! !} / {!> !} forms sit INSIDE an existing ``` fence in the real docs
+        # (mkdocs-include-markdown does a raw insert; mkdocs handles the fence).
+        "```Python\n"
+        "{!../../docs_src/deps/tutorial008.py!}\n"
+        "```\n\n"
+        "```Python\n"
+        "{!> ../../docs_src/deps/tutorial008.py!}\n"
+        "```\n\n"
         "{!../../docs_src/missing.py!}\n"
     )
     (tmp_path / "fastapi").mkdir()
@@ -25,9 +29,12 @@ def test_includes_are_expanded_because_the_answer_is_often_in_docs_src(tmp_path)
     repo = make_repo(tmp_path)
     md = (repo / "docs/en/docs/tutorial/deps.md").read_text()
     text, missing = expand_includes(md, repo / "docs/en")
+    # {* *} is a standalone snippet: it gets its own fence.
     assert "```python\nasync def get_db():\n    yield db\n```" in text
-    # all three resolvable forms ({* *}, {! !}, {!> !}) must expand, not just the first
-    assert text.count("```python\nasync def get_db():\n    yield db\n```") == 3
+    # {! !} / {!> !} are raw inserts into the surrounding fence: no nested fence.
+    assert "```Python\nasync def get_db():\n    yield db\n```" in text
+    assert text.count("async def get_db():\n    yield db") == 3
+    assert "```python\nasync def get_db():\n    yield db\n```\n```" not in text
     assert missing == ["../../docs_src/missing.py"]  # reported, not silently dropped
 
 

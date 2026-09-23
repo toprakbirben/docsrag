@@ -26,12 +26,19 @@ def expand_includes(md: str, base: Path) -> tuple[str, list[str]]:
     missing: list[str] = []
 
     def sub(m: re.Match) -> str:
+        snippet_form = m.group(1) is not None
         rel = m.group(1) or m.group(2)
         path = (base / rel).resolve()
         if not path.is_file() or not path.is_relative_to(repo):
             missing.append(rel)
             return m.group(0)
-        return f"```python\n{path.read_text().rstrip()}\n```"
+        content = path.read_text().rstrip()
+        if snippet_form:
+            # {* path *} is a standalone mkdocs "snippet" -- not inside a fence.
+            return f"```python\n{content}\n```"
+        # {!path!} / {!> path!} are mkdocs-include-markdown inserts that FastAPI's
+        # docs always place inside an existing ``` fence -- insert raw.
+        return content
 
     return INCLUDE.sub(sub, md), missing
 
