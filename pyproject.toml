@@ -1,0 +1,19 @@
+[project]
+name = "stuffrag"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "typer>=0.12",
+]
+
+[project.scripts]
+stuff = "stuffrag.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
