@@ -95,7 +95,8 @@ def evaluate(conn: psycopg.Connection, q: Question, cfg: PipelineConfig) -> dict
     ranked = doc_ranking(hits)
     r = {"id": q.id, "should_refuse": q.should_refuse, "refused": answer.refused,
          "answer": answer.text, "citations": answer.citations, "retrieved": ranked[:10],
-         "latency_s": latency, "recall@5": None, "mrr@10": None, "keyfact": None, "judge": None}
+         "latency_s": latency, "context_chars": sum(len(h.text) for h in hits[: cfg.top_k]),
+         "recall@5": None, "mrr@10": None, "keyfact": None, "judge": None}
     if not q.should_refuse:
         r["recall@5"] = recall_at(ranked, q.gold_sources, 5)
         r["mrr@10"] = mrr_at(ranked, q.gold_sources, 10)

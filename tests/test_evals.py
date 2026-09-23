@@ -120,3 +120,22 @@ def test_run_skips_warmup_when_rerank_is_off(tmp_path, monkeypatch):
 
     q = evals.Question(id="q1", question="?", expected_answer=[], gold_sources=[], source_type="fastapi")
     evals.run(FakeConn(), PipelineConfig(name="baseline", rerank=False), [q])
+
+
+def test_evaluate_records_context_chars_from_top_k_hits(monkeypatch):
+    from stuffrag.config import PipelineConfig
+    from stuffrag.generate import Answer
+    from stuffrag.retrieve import Hit
+
+    hits = [Hit(1, "docA", "aaaa", 0.0), Hit(2, "docB", "bb", 0.0), Hit(3, "docC", "ccccccc", 0.0)]
+    monkeypatch.setattr(evals, "retrieve", lambda conn, question, cfg: hits)
+    monkeypatch.setattr(
+        evals, "generate",
+        lambda question, hits, cfg: Answer(text="ans", citations=[], hits=hits),
+    )
+    cfg = PipelineConfig(top_k=2)
+    q = evals.Question(id="q1", question="?", expected_answer=["x"], gold_sources=["docA"],
+                        source_type="fastapi")
+    r = evals.evaluate(object(), q, cfg)
+    # only the top_k=2 hits actually go into the prompt; the 3rd must not count.
+    assert r["context_chars"] == len(hits[0].text) + len(hits[1].text)
