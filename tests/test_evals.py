@@ -57,3 +57,66 @@ def test_compare_prints_deltas():
         "latency_p50        2.000    3.000   +1.000",
         "recall@5           0.500    0.750   +0.250",
     ]
+
+
+def test_run_warms_up_reranker_before_the_timed_loop(tmp_path, monkeypatch):
+    # cfg.rerank=True must load the model once before evaluate() is called for any
+    # question, so the first question's latency doesn't include model load time.
+    from stuffrag.config import PipelineConfig
+    from stuffrag import rerank as rerank_mod
+
+    calls = []
+    monkeypatch.setattr(evals, "index", lambda conn, cfg: None)
+    monkeypatch.setattr(evals, "git_sha", lambda: "deadbee")
+    monkeypatch.setattr(evals, "RUNS", tmp_path)
+
+    def fake_evaluate(conn, q, cfg):
+        calls.append("evaluate")
+        return {"id": q.id, "should_refuse": False, "refused": False, "recall@5": 1.0,
+                "mrr@10": 1.0, "keyfact": 1.0, "judge": True, "latency_s": 0.0}
+
+    monkeypatch.setattr(evals, "evaluate", fake_evaluate)
+
+    def fake_model():
+        calls.append("warmup")
+
+    monkeypatch.setattr(rerank_mod, "_model", fake_model)
+
+    class FakeConn:
+        def execute(self, *a, **k):
+            pass
+
+        def commit(self):
+            pass
+
+    q = evals.Question(id="q1", question="?", expected_answer=[], gold_sources=[], source_type="fastapi")
+    evals.run(FakeConn(), PipelineConfig(name="hybrid_rerank", rerank=True), [q])
+    assert calls[0] == "warmup"
+    assert calls[1] == "evaluate"
+
+
+def test_run_skips_warmup_when_rerank_is_off(tmp_path, monkeypatch):
+    from stuffrag.config import PipelineConfig
+    from stuffrag import rerank as rerank_mod
+
+    monkeypatch.setattr(evals, "index", lambda conn, cfg: None)
+    monkeypatch.setattr(evals, "git_sha", lambda: "deadbee")
+    monkeypatch.setattr(evals, "RUNS", tmp_path)
+    monkeypatch.setattr(evals, "evaluate", lambda conn, q, cfg: {
+        "id": q.id, "should_refuse": False, "refused": False, "recall@5": 1.0,
+        "mrr@10": 1.0, "keyfact": 1.0, "judge": True, "latency_s": 0.0})
+
+    def boom():
+        raise AssertionError("must not warm up the reranker when cfg.rerank is False")
+
+    monkeypatch.setattr(rerank_mod, "_model", boom)
+
+    class FakeConn:
+        def execute(self, *a, **k):
+            pass
+
+        def commit(self):
+            pass
+
+    q = evals.Question(id="q1", question="?", expected_answer=[], gold_sources=[], source_type="fastapi")
+    evals.run(FakeConn(), PipelineConfig(name="baseline", rerank=False), [q])

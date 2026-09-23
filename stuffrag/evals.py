@@ -10,6 +10,7 @@ import psycopg
 import yaml
 from psycopg.types.json import Jsonb
 
+from stuffrag import rerank as rerank_mod
 from stuffrag.config import PipelineConfig
 from stuffrag.embed import index
 from stuffrag.generate import chat, generate
@@ -111,6 +112,8 @@ def git_sha() -> str:
 
 def run(conn: psycopg.Connection, cfg: PipelineConfig, questions: list[Question]) -> Path:
     index(conn, cfg)  # each ablation is one flag change: make sure its chunks/vectors exist
+    if cfg.rerank:
+        rerank_mod._model()  # warm up so the first question's latency excludes model load
     results = [evaluate(conn, q, cfg) for q in questions]
     run_id = f"{datetime.now():%Y%m%d-%H%M%S}-{cfg.name}"
     doc = {"id": run_id, "config": cfg.to_dict(), "git_sha": git_sha(),
