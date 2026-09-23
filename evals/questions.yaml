@@ -1,6 +1,6 @@
 - id: fa-01
   question: How do I declare a dependency with yield in FastAPI, and when does the code after yield run?
-  expected_answer: ["yield"]
+  expected_answer: ["Depends"]
   gold_sources: ["fastapi:docs/en/docs/tutorial/dependencies/dependencies-with-yield.md"]
   source_type: fastapi
 - id: fa-02
@@ -15,12 +15,12 @@
   source_type: fastapi
 - id: fa-04
   question: How do I make an optional query parameter q that can be at most 50 characters long?
-  expected_answer: ["Query", "max_length"]
+  expected_answer: ["max_length"]
   gold_sources: ["fastapi:docs/en/docs/tutorial/query-params-str-validations.md"]
   source_type: fastapi
 - id: fa-05
   question: I have a single Pydantic body parameter item, but I want the client to send it nested under an "item" key in the JSON. How do I do that?
-  expected_answer: ["embed"]
+  expected_answer: ["embed=True"]
   gold_sources: ["fastapi:docs/en/docs/tutorial/body-multiple-params.md"]
   source_type: fastapi
 - id: fa-06
@@ -55,7 +55,7 @@
   source_type: fastapi
 - id: fa-12
   question: How do I return a 404 error with a custom message like "Item not found" from a path operation?
-  expected_answer: ["HTTPException", "detail"]
+  expected_answer: ["HTTPException", "detail="]
   gold_sources: ["fastapi:docs/en/docs/tutorial/handling-errors.md"]
   source_type: fastapi
 - id: fa-13
@@ -120,6 +120,6 @@
   source_type: fastapi
 - id: fa-25
   question: How do I add a dependency, like verifying a token header, to every path operation in the whole application?
-  expected_answer: ["dependencies"]
+  expected_answer: ["dependencies=["]
   gold_sources: ["fastapi:docs/en/docs/tutorial/dependencies/global-dependencies.md"]
   source_type: fastapi
