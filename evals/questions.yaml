@@ -1,0 +1,125 @@
+- id: fa-01
+  question: How do I declare a dependency with yield in FastAPI, and when does the code after yield run?
+  expected_answer: ["after creating the response", "before sending it"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/dependencies/dependencies-with-yield.md"]
+  source_type: fastapi
+- id: fa-02
+  question: Which class do I use to split path operations across multiple files?
+  expected_answer: ["APIRouter", "include_router"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/bigger-applications.md"]
+  source_type: fastapi
+- id: fa-03
+  question: How can I declare a path parameter whose value is itself a file path containing slashes, like /files/home/johndoe/myfile.txt?
+  expected_answer: ["{file_path:path}"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/path-params.md"]
+  source_type: fastapi
+- id: fa-04
+  question: How do I make an optional query parameter q that can be at most 50 characters long?
+  expected_answer: ["Annotated", "max_length=50"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/query-params-str-validations.md"]
+  source_type: fastapi
+- id: fa-05
+  question: I have a single Pydantic body parameter item, but I want the client to send it nested under an "item" key in the JSON. How do I do that?
+  expected_answer: ["Body(embed=True)"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/body-multiple-params.md"]
+  source_type: fastapi
+- id: fa-06
+  question: How do I enable CORS in a FastAPI app, and which setting allows cookies in cross-origin requests?
+  expected_answer: ["CORSMiddleware", "allow_credentials"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/cors.md"]
+  source_type: fastapi
+- id: fa-07
+  question: How do I send an email notification after returning a response, without making the client wait?
+  expected_answer: ["BackgroundTasks", "add_task"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/background-tasks.md"]
+  source_type: fastapi
+- id: fa-08
+  question: How do I load a machine learning model once when the app starts and release it when the app shuts down?
+  expected_answer: ["lifespan", "asynccontextmanager"]
+  gold_sources: ["fastapi:docs/en/docs/advanced/events.md"]
+  source_type: fastapi
+- id: fa-09
+  question: How do I write tests for my FastAPI app, and what package do I need to install for the test client?
+  expected_answer: ["TestClient", "httpx"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/testing.md"]
+  source_type: fastapi
+- id: fa-10
+  question: How can I leave fields that were never set out of the response, so default values are not included in the returned JSON?
+  expected_answer: ["response_model_exclude_unset=True"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/response-model.md"]
+  source_type: fastapi
+- id: fa-11
+  question: How do I make a create endpoint return the 201 status code instead of 200?
+  expected_answer: ["status_code=201"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/response-status-code.md"]
+  source_type: fastapi
+- id: fa-12
+  question: How do I return a 404 error with a custom message like "Item not found" from a path operation?
+  expected_answer: ["raise HTTPException", "status_code=404"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/handling-errors.md"]
+  source_type: fastapi
+- id: fa-13
+  question: In a WebSocket endpoint, how do I detect that the client has disconnected?
+  expected_answer: ["WebSocketDisconnect", "receive_text"]
+  gold_sources: ["fastapi:docs/en/docs/advanced/websockets.md"]
+  source_type: fastapi
+- id: fa-14
+  question: How do I read application settings from environment variables with Pydantic, and which package provides that?
+  expected_answer: ["BaseSettings", "pydantic-settings"]
+  gold_sources: ["fastapi:docs/en/docs/advanced/settings.md"]
+  source_type: fastapi
+- id: fa-15
+  question: How do I avoid creating the Settings object and reading the .env file again on every request?
+  expected_answer: ["lru_cache", "get_settings"]
+  gold_sources: ["fastapi:docs/en/docs/advanced/settings.md"]
+  source_type: fastapi
+- id: fa-16
+  question: Which FastAPI class do I use to receive a bearer token for the OAuth2 password flow, and what parameter points at the token endpoint?
+  expected_answer: ["OAuth2PasswordBearer", "tokenUrl"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/security/first-steps.md"]
+  source_type: fastapi
+- id: fa-17
+  question: Which libraries does the FastAPI security tutorial use to create JWT tokens and to hash passwords?
+  expected_answer: ["PyJWT", "passlib", "bcrypt"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/security/oauth2-jwt.md"]
+  source_type: fastapi
+- id: fa-18
+  question: How do I write a custom middleware that adds an X-Process-Time header to every response?
+  expected_answer: ["@app.middleware(\"http\")", "call_next"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/middleware.md"]
+  source_type: fastapi
+- id: fa-19
+  question: In my tests, how do I replace a dependency that calls an external service with a fake one?
+  expected_answer: ["app.dependency_overrides"]
+  gold_sources: ["fastapi:docs/en/docs/advanced/testing-dependencies.md"]
+  source_type: fastapi
+- id: fa-20
+  question: When I use a class as a dependency, is there a shortcut so I don't have to write the class name twice?
+  expected_answer: ["Depends()"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/dependencies/classes-as-dependencies.md"]
+  source_type: fastapi
+- id: fa-21
+  question: How do I accept an uploaded file in an endpoint, and what extra package must be installed?
+  expected_answer: ["UploadFile", "python-multipart"]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/request-files.md"]
+  source_type: fastapi
+- id: fa-22
+  question: Which HTTP status code does FastAPI's default exception handler return when request validation fails?
+  expected_answer: ["422"]
+  gold_sources: ["fastapi:fastapi/exception_handlers.py"]
+  source_type: fastapi
+- id: fa-23
+  question: When OAuth2PasswordBearer finds no Authorization header, what status code, detail and response header does it send?
+  expected_answer: ["401", "Not authenticated", "WWW-Authenticate"]
+  gold_sources: ["fastapi:fastapi/security/oauth2.py"]
+  source_type: fastapi
+- id: fa-24
+  question: What are the default URLs of the Swagger UI docs, the ReDoc docs and the OpenAPI schema in a FastAPI app?
+  expected_answer: ["/docs", "/redoc", "/openapi.json"]
+  gold_sources: ["fastapi:fastapi/applications.py"]
+  source_type: fastapi
+- id: fa-25
+  question: How do I add a dependency, like verifying a token header, to every path operation in the whole application?
+  expected_answer: ["FastAPI(dependencies="]
+  gold_sources: ["fastapi:docs/en/docs/tutorial/dependencies/global-dependencies.md"]
+  source_type: fastapi
