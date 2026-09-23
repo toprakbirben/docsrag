@@ -1,6 +1,7 @@
 import os
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 DSN = os.environ.get("STUFFRAG_DSN", "postgresql://stuff:stuff@localhost:5433/stuffrag")
 
@@ -67,3 +68,28 @@ def init() -> list[str]:
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
         ).fetchall()
     return [r[0] for r in rows]
+
+
+def diff_documents(existing: dict[str, str], docs: list[dict]) -> tuple[list[str], list[str]]:
+    new = [d["id"] for d in docs if d["id"] not in existing]
+    changed = [d["id"] for d in docs if d["id"] in existing and existing[d["id"]] != d["body"]]
+    return new, changed
+
+
+def upsert_documents(conn: psycopg.Connection, docs: list[dict]) -> tuple[int, int]:
+    """Insert new docs, replace changed ones and drop their stale chunks. Returns (new, changed)."""
+    ids = [d["id"] for d in docs]
+    existing = dict(conn.execute("SELECT id, body FROM documents WHERE id = ANY(%s)", (ids,)).fetchall())
+    new, changed = diff_documents(existing, docs)
+    todo = set(new) | set(changed)
+    conn.execute("DELETE FROM chunks WHERE document_id = ANY(%s)", (changed,))
+    with conn.cursor() as cur:
+        cur.executemany(
+            """INSERT INTO documents (id, source_type, title, body, metadata)
+               VALUES (%(id)s, %(source_type)s, %(title)s, %(body)s, %(metadata)s)
+               ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, body = EXCLUDED.body,
+                   metadata = EXCLUDED.metadata, ingested_at = now()""",
+            [{**d, "metadata": Jsonb(d["metadata"])} for d in docs if d["id"] in todo],
+        )
+    conn.commit()
+    return len(new), len(changed)
