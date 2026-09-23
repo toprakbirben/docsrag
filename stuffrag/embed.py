@@ -80,4 +80,4 @@ def index(
         conn.commit()  # per batch, so an interrupted run resumes where it stopped
         if on_progress:
             on_progress(start + len(part), len(todo))
-    return {"chunked_docs": len(docs), "chunks": len(rows), "embedded": len(todo)}
+    return {"chunked_docs": len({doc_id for doc_id, *_ in rows}), "chunks": len(rows), "embedded": len(todo)}
