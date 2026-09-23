@@ -6,6 +6,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pgvector>=0.3",
     "typer>=0.12",
+    "httpx>=0.28.1",
 ]
 
 [project.scripts]

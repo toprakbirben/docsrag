@@ -1,6 +1,6 @@
 import typer
 
-from stuffrag import db
+from stuffrag import config, db
 
 app = typer.Typer(no_args_is_help=True)
 db_app = typer.Typer()
@@ -29,3 +29,20 @@ def sync(source: str) -> None:
         new, changed = db.upsert_documents(conn, docs)
     typer.echo(f"fastapi {fastapi_repo.FASTAPI_TAG}: {len(docs)} docs ({new} new, {changed} changed), "
                f"{len(missing)} unresolved includes")
+    _index("baseline")
+
+
+def _index(cfg_name: str) -> None:
+    from stuffrag import embed
+
+    cfg = config.get(cfg_name)
+    with db.connect() as conn:
+        stats = embed.index(conn, cfg, on_progress=lambda d, n: typer.echo(f"  embedded {d}/{n}", err=True))
+    typer.echo(f"index [{cfg.name}: {cfg.chunker}, {cfg.embedder}]: {stats['chunked_docs']} docs chunked, "
+               f"{stats['chunks']} chunks added, {stats['embedded']} embedded")
+
+
+@app.command("index")
+def index_cmd(config_name: str = typer.Option("baseline", "--config")) -> None:
+    """Chunk + embed documents for a pipeline config (idempotent)."""
+    _index(config_name)
