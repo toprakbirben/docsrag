@@ -87,11 +87,12 @@ def test_hidden_files_are_counted_not_shown(repo):
 
 
 def test_budget_reduces_largest_commit_and_reports_it(repo, monkeypatch):
-    monkeypatch.setattr(history, "TOTAL_CAP", 300)
     commit(repo, "Big", "2026-09-21", {"big.py": "".join(f"v{i} = {i}\n" for i in range(200))})
     cs = history.commits(repo, "2026-09-05")
     for c in cs:
         history.load(repo, c, {})
+    # just under the full prompt: exactly one reduction (the biggest) must make it fit
+    monkeypatch.setattr(history, "TOTAL_CAP", len(history.render(cs)) - 1)
     notes: list[str] = []
     history.budget(cs, notes)
     big = next(c for c in cs if c.subject == "Big")
@@ -257,3 +258,51 @@ def test_history_calls_cap_output_and_penalise_repetition(repo, monkeypatch):
     monkeypatch.setattr(history, "chat", lambda m, s, u, options=None: seen.update(options or {}) or "ok")
     history.changes("app", "2026-09-05", None, PipelineConfig(), root=repo.parent)
     assert seen["num_predict"] <= 2000 and seen["repeat_penalty"] > 1.1
+
+
+def test_non_ascii_named_secret_is_not_glued_onto_the_previous_file(repo):
+    # Review C1: git quotes such paths, the header regex missed them, and the secret's content
+    # was checked (and shipped) under the previous file's name.
+    commit(repo, "Keys", "2026-09-21", {"a.py": "x = 1\n", "clé.pem": "unique-secret-material\n"})
+    (c,) = history.commits(repo, "2026-09-21")
+    history.load(repo, c, {})
+    assert "unique-secret-material" not in c.diff and "x = 1" in c.diff
+    assert any("clé.pem" in p for p in c.secret_files)
+
+
+def test_unparseable_path_fails_closed(repo):
+    commit(repo, "Odd", "2026-09-21", {'we"ird.py': "odd_content_here = 1\n"})
+    (c,) = history.commits(repo, "2026-09-21")
+    history.load(repo, c, {})
+    assert "odd_content_here" not in c.diff and c.secret_files
+
+
+def test_renamed_env_file_does_not_leak_through_rename_detection(repo):
+    # Review C2: only the new path was name-checked, so .env -> notes.txt showed .env's lines.
+    commit(repo, "Env", "2026-09-21", {".env": "DB_HOST=localhost\nDB_NAME=fuutball_dev\nLINE3=a\nLINE4=b\n"})
+    git(repo, "mv", ".env", "notes.txt")
+    commit(repo, "Rename", "2026-09-22", {"notes.txt": "DB_HOST=localhost\nDB_NAME=fuutball_dev\nLINE3=a\nLINE4=c\n"})
+    (c,) = history.commits(repo, "2026-09-22")
+    history.load(repo, c, {})
+    # notes.txt now legitimately holds its own lines (ingest indexes it too); what must not leak is
+    # content that only ever lived in .env (the old LINE4 value).
+    assert "LINE4=b" not in c.diff and ".env" in c.secret_files
+
+
+def test_range_too_large_for_the_context_is_refused_not_silently_truncated(repo, monkeypatch):
+    # Review I1: only diffs were measured; stats/messages could overflow num_ctx and Ollama would
+    # silently drop the start of the prompt (the instructions).
+    monkeypatch.setattr(history, "TOTAL_CAP", 200)
+    cs = history.commits(repo, "2026-08-01")
+    for c in cs:
+        history.load(repo, c, {})
+    with pytest.raises(history.HistoryError, match="too large"):
+        history.budget(cs, [])
+
+
+def test_why_follows_renames_to_the_real_origin(repo):
+    # Review I2: without --follow, -S stops at the rename and credits it as the origin.
+    git(repo, "mv", "app.py", "server.py")
+    commit(repo, "Move app", "2026-09-21", {})
+    first = git(repo, "log", "--format=%H", "--grep", "Add app")
+    assert history.introducing_commit(repo, "server.py", "limiter = Limiter(key_func=session_key_func)") == first

@@ -1,7 +1,7 @@
 import json
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from stuffrag.config import PipelineConfig
@@ -16,7 +16,8 @@ OMITTED = "(omitted: matched a secret pattern)"
 # a wider repeat window breaks the loop and num_predict bounds the worst case.
 HISTORY_OPTIONS = {"num_predict": 2000, "repeat_penalty": 1.15, "repeat_last_n": 512}
 TRUNCATED = "\n... (diff truncated: see the full file list above)\n"
-FILE_HEADER = re.compile(r"^diff --git a/.* b/(.*)$", re.M)
+FILE_START = re.compile(r"^diff --git ", re.M)
+PLAIN_HEADER = re.compile(r"diff --git a/(.*) b/(.*)")  # quoted headers (special chars) don't match: fail closed
 
 
 class HistoryError(Exception):
@@ -99,14 +100,22 @@ def load(repo: Path, c: Commit, prs: dict[str, dict], path: str | None = None) -
     """Fill the filtered diff, stat and PR; secret files are dropped whole and only their paths kept."""
     rng = _range(repo, c.sha)
     scope = ["--", path] if path else []
-    raw = _git(repo, "diff", "--no-color", *rng, *scope)
-    c.stat = _git(repo, "diff", "--stat", *rng, *scope).strip()
+    # --no-renames: a renamed .env must show as its own (dropped) deletion, not as context lines in
+    # the new file's chunk. quotePath=false: non-ASCII names stay parseable instead of being quoted.
+    diff = ["-c", "core.quotePath=false", "diff", "--no-renames"]
+    raw = _git(repo, *diff, "--no-color", *rng, *scope)
+    c.stat = _git(repo, *diff, "--stat", *rng, *scope).strip()
     kept = []
-    starts = [m.start() for m in FILE_HEADER.finditer(raw)] + [len(raw)]
+    starts = [m.start() for m in FILE_START.finditer(raw)] + [len(raw)]
     for a, b in zip(starts, starts[1:]):
         chunk = raw[a:b]
-        fpath = FILE_HEADER.match(chunk).group(1)
-        if is_secret(fpath, chunk):
+        header = chunk.split("\n", 1)[0]
+        m = PLAIN_HEADER.fullmatch(header)
+        if not m:  # can't tell which file this is, so can't vet it: never send it
+            c.secret_files.append(f"(unparsed) {header.removeprefix('diff --git ')}")
+            continue
+        old, fpath = m.groups()
+        if is_secret(old, "") or is_secret(fpath, chunk):
             c.secret_files.append(fpath)
         elif not _allowed(fpath) or "\nBinary files " in chunk:
             c.hidden_files += 1
@@ -119,15 +128,18 @@ def load(repo: Path, c: Commit, prs: dict[str, dict], path: str | None = None) -
 
 
 def budget(commits: list[Commit], notes: list[str]) -> None:
-    """Cap each diff at its share of the context, then reduce the largest to --stat until it fits."""
-    cap = max(COMMIT_CAP, TOTAL_CAP // max(len(commits), 1))
+    """Cap each diff at its share of the context, then reduce the largest to --stat until the whole
+    rendered prompt fits; refuse rather than let Ollama silently drop the start of the prompt."""
+    overhead = len(render([replace(c, diff="") for c in commits]))
+    cap = max(COMMIT_CAP, (TOTAL_CAP - overhead) // max(len(commits), 1))
     for c in commits:
         if len(c.diff) > cap:  # marker inside the cap, or a lone commit overshoots and gets reduced
             c.diff = c.diff[: cap - len(TRUNCATED)] + TRUNCATED
-    while sum(len(c.diff) for c in commits) > TOTAL_CAP:
+    while len(render(commits)) > TOTAL_CAP:
         full = [c for c in commits if not c.reduced]
         if not full:
-            break
+            raise HistoryError(f"{len(commits)} commits are too large to explain in one answer, even as "
+                               "file lists; narrow --since/--until")
         big = max(full, key=lambda c: len(c.diff))
         big.diff, big.reduced = big.stat, True
         notes.append(f"{big.sha[:7]} too large: shown as file stats only")
@@ -248,8 +260,10 @@ def introducing_line(text: str, document_id: str) -> str | None:
 
 
 def introducing_commit(repo: Path, path: str, line: str) -> str | None:
-    shas = _git(repo, "log", "-S", line, "--reverse", "--format=%H", "--", path).split()
-    return shas[0] if shas else None
+    # --follow: code that predates a rename was introduced before it, not by the rename commit.
+    # git ignores --follow combined with --reverse (returns nothing), so take the oldest = last.
+    shas = _git(repo, "log", "--follow", "-S", line, "--format=%H", "--", path).split()
+    return shas[-1] if shas else None
 
 
 def why(conn, project: str, topic: str, cfg: PipelineConfig, root: Path | None = None) -> Report:
