@@ -213,3 +213,27 @@ def test_why_without_introducing_commit_does_not_guess(repo, monkeypatch):
     monkeypatch.setattr(history, "chat", lambda *a: pytest.fail("LLM must not be asked to guess"))
     rep = history.why(None, "app", "anything", PipelineConfig(), root=repo.parent)
     assert rep.commits == [] and "not found" in rep.text.lower()
+
+
+def test_truncated_commit_still_lists_every_changed_file(repo, monkeypatch):
+    # Real run: PR #123's TacticsPage.tsx fell past the cap and the model claimed the
+    # "tactic" part of the message wasn't in the diff. The full file list must always be visible.
+    monkeypatch.setattr(history, "COMMIT_CAP", 1000)
+    monkeypatch.setattr(history, "TOTAL_CAP", 2000)
+    commit(repo, "Tactics", "2026-09-21", {"a.py": "".join(f"v{i} = {i}\n" for i in range(400)),
+                                           "b.tsx": "export const tactic = 1\n"})
+    cs = history.commits(repo, "2026-09-21")
+    for c in cs:
+        history.load(repo, c, {})
+    history.budget(cs, [])
+    assert "b.tsx" not in cs[0].diff and "b.tsx" in history.render(cs)
+    assert "truncated" in history.CHANGES_SYSTEM and "truncated" in history.WHY_SYSTEM
+
+
+def test_single_commit_gets_the_whole_budget(repo):
+    # One PR asked about on its own should be shown in full, not cut at the per-commit floor.
+    commit(repo, "Big", "2026-09-21", {"big.py": "".join(f"value_{i} = {i}\n" for i in range(800))})
+    cs = history.commits(repo, "2026-09-21")
+    history.load(repo, cs[0], {})
+    history.budget(cs, [])
+    assert len(cs[0].diff) > history.COMMIT_CAP and "truncated" not in cs[0].diff

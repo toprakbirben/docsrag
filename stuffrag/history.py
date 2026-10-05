@@ -9,9 +9,10 @@ from stuffrag.generate import chat
 from stuffrag.ingest.projects import ROOT, SKIP_PROJECTS, _allowed, is_secret
 from stuffrag.retrieve import retrieve
 
-COMMIT_CAP = 6_000   # chars of filtered diff per commit
+COMMIT_CAP = 6_000   # floor of filtered-diff chars per commit (a commit gets more if the total allows)
 TOTAL_CAP = 40_000   # chars of diff across all commits sent to the LLM
 OMITTED = "(omitted: matched a secret pattern)"
+TRUNCATED = "\n... (diff truncated: see the full file list above)\n"
 FILE_HEADER = re.compile(r"^diff --git a/.* b/(.*)$", re.M)
 
 
@@ -108,15 +109,18 @@ def load(repo: Path, c: Commit, prs: dict[str, dict], path: str | None = None) -
             c.hidden_files += 1
         else:
             kept.append(chunk)
-    diff = "".join(kept)
-    c.diff = diff if len(diff) <= COMMIT_CAP else diff[:COMMIT_CAP] + "\n... (diff truncated)\n"
+    c.diff = "".join(kept)  # capped later by budget(), which knows how many commits share the context
     c.subject, c.body = _scrub(c.subject), _scrub(c.body)
     pr = prs.get(c.sha)
     c.pr = pr and {**pr, "title": _scrub(pr.get("title", "")), "body": _scrub(pr.get("body") or "")}
 
 
 def budget(commits: list[Commit], notes: list[str]) -> None:
-    """Reduce the largest diffs to --stat until the total fits; say which ones."""
+    """Cap each diff at its share of the context, then reduce the largest to --stat until it fits."""
+    cap = max(COMMIT_CAP, TOTAL_CAP // max(len(commits), 1))
+    for c in commits:
+        if len(c.diff) > cap:  # marker inside the cap, or a lone commit overshoots and gets reduced
+            c.diff = c.diff[: cap - len(TRUNCATED)] + TRUNCATED
     while sum(len(c.diff) for c in commits) > TOTAL_CAP:
         full = [c for c in commits if not c.reduced]
         if not full:
@@ -168,7 +172,9 @@ CHANGES_SYSTEM = """You explain what changed in a software project, using ONLY t
 (commit message, PR description, diff). Write three sections: Added, Removed, Changed.
 Cite every point with its commit id in square brackets, e.g. [abc1234].
 If a message or PR description claims something its diff does not show, or the diff does something
-the message does not mention, list it under a fourth section "Message vs diff". Do not invent changes."""
+the message does not mention, list it under a fourth section "Message vs diff". Do not invent changes.
+A diff marked truncated (or "file list only") is incomplete: the file list is complete, so never claim
+a message is unsupported because its change is missing from a truncated diff."""
 
 
 @dataclass
@@ -186,7 +192,8 @@ def render(commits: list[Commit]) -> str:
             head += f"\nPR #{c.pr['number']}: {c.pr['title']}\n{c.pr['body']}"
         if c.body:
             head += f"\nMessage:\n{c.body}"
-        parts.append(f"{head}\nDiff{' (file stats only)' if c.reduced else ''}:\n{c.diff or '(no code changes shown)'}")
+        diff = "(too large: file list only)" if c.reduced else (c.diff or "(no code changes shown)")
+        parts.append(f"{head}\nFiles changed:\n{c.stat or '(none)'}\nDiff:\n{diff}")
     return "\n\n---\n\n".join(parts)
 
 
@@ -214,7 +221,8 @@ def changes(project: str, since: str, until: str | None, cfg: PipelineConfig, ro
 COMMENT = ("#", "//", "/*", "*", "<!--", "--")
 WHY_SYSTEM = """You explain when and why a piece of code was added, using ONLY the commits below
 (commit message, PR description, diff of the file where the code lives). Say when it was added, why
-(from the message/PR; say so if they give no reason), and what the change did. Cite commits as [abc1234]."""
+(from the message/PR; say so if they give no reason), and what the change did. Cite commits as [abc1234].
+A diff marked truncated is incomplete; do not draw conclusions from what it does not show."""
 NOT_FOUND = "Not found: could not identify the commit that introduced this code, so I won't guess."
 
 
