@@ -186,3 +186,8 @@
   gold_sources: []
   source_type: projects
   should_refuse: true
+- id: pr-13
+  question: How does fuutball's backend run the jobs?
+  expected_answer: ["celery", "cron", "celery beat"]
+  gold_sources: ["projects:fuutball/backend/workers/celery_app.py"]
+  source_type: projects
