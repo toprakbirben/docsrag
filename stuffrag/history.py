@@ -7,6 +7,7 @@ from pathlib import Path
 from stuffrag.config import PipelineConfig
 from stuffrag.generate import chat
 from stuffrag.ingest.projects import ROOT, SKIP_PROJECTS, _allowed, is_secret
+from stuffrag.retrieve import retrieve
 
 COMMIT_CAP = 6_000   # chars of filtered diff per commit
 TOTAL_CAP = 40_000   # chars of diff across all commits sent to the LLM
@@ -208,3 +209,50 @@ def changes(project: str, since: str, until: str | None, cfg: PipelineConfig, ro
     budget(cs, notes)
     text = chat(cfg.llm, CHANGES_SYSTEM, f"Project: {project}\n\n{render(cs)}")
     return Report(text, cs, notes + omission_notes(cs))
+
+
+COMMENT = ("#", "//", "/*", "*", "<!--", "--")
+WHY_SYSTEM = """You explain when and why a piece of code was added, using ONLY the commits below
+(commit message, PR description, diff of the file where the code lives). Say when it was added, why
+(from the message/PR; say so if they give no reason), and what the change did. Cite commits as [abc1234]."""
+NOT_FOUND = "Not found: could not identify the commit that introduced this code, so I won't guess."
+
+
+def introducing_line(text: str, document_id: str) -> str | None:
+    """Most distinctive line of a chunk (label stripped, comments skipped, >=20 non-space chars)."""
+    label = document_id.removeprefix("projects:")
+    body = text.removeprefix(label + "\n\n")
+    lines = [ln.strip() for ln in body.splitlines()]
+    good = [ln for ln in lines if not ln.startswith(COMMENT) and len(ln.replace(" ", "")) >= 20]
+    return max(good, key=len) if good else None
+
+
+def introducing_commit(repo: Path, path: str, line: str) -> str | None:
+    shas = _git(repo, "log", "-S", line, "--reverse", "--format=%H", "--", path).split()
+    return shas[0] if shas else None
+
+
+def why(conn, project: str, topic: str, cfg: PipelineConfig, root: Path | None = None) -> Report:
+    repo = repo_for(project, root or ROOT)
+    prs, warning = pr_map(repo)
+    notes = [warning] if warning else []
+    found: list[Commit] = []
+    for h in retrieve(conn, topic, cfg, project)[:3]:
+        if h.document_id.endswith("/__overview__"):
+            continue
+        path = h.document_id.removeprefix(f"projects:{project}/")
+        line = introducing_line(h.text, h.document_id)
+        sha = line and introducing_commit(repo, path, line)
+        if not sha or sha in {c.sha for c in found} or len(found) == 3:
+            continue
+        c = commit_info(repo, sha)
+        load(repo, c, prs, path=path)
+        if not c.pr and (m := merge_of(repo, sha)) and m in prs:
+            c.pr = {**prs[m], "title": _scrub(prs[m].get("title", "")), "body": _scrub(prs[m].get("body") or "")}
+        c.body = f"(found via {path})\n{c.body}".strip()
+        found.append(c)
+    if not found:
+        return Report(NOT_FOUND, [], notes)
+    budget(found, notes)
+    text = chat(cfg.llm, WHY_SYSTEM, f"Project: {project}\nQuestion: when and why was this added: {topic}\n\n{render(found)}")
+    return Report(text, found, notes + omission_notes(found))

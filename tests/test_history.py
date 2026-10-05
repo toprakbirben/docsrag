@@ -179,3 +179,37 @@ def test_cli_changes_empty_range_exits_1(repo, monkeypatch):
     monkeypatch.setattr(history, "ROOT", repo.parent)
     out = CliRunner().invoke(cli.app, ["changes", "app", "--since", "2030-01-01"])
     assert out.exit_code == 1 and "no commits" in out.output
+
+
+from stuffrag.retrieve import Hit
+
+
+def test_introducing_commit_is_the_first_not_the_latest(repo):
+    commit(repo, "Touch app", "2026-09-21", {"app.py": "limiter = Limiter(key_func=session_key_func)\nx = 1\n"})
+    first = git(repo, "log", "--format=%H", "--grep", "Add app")
+    assert history.introducing_commit(repo, "app.py", "limiter = Limiter(key_func=session_key_func)") == first
+
+
+def test_introducing_line_skips_label_and_comments():
+    text = "app/app.py\n\n# a very long comment line that should never be picked\nlimiter = Limiter(key_func=f)\nx = 1"
+    assert history.introducing_line(text, "projects:app/app.py") == "limiter = Limiter(key_func=f)"
+    assert history.introducing_line("app/a.py\n\nx = 1", "projects:app/a.py") is None
+
+
+def test_why_explains_from_the_introducing_commit(repo, monkeypatch):
+    hits = [Hit(1, "projects:app/__overview__", "overview", 1.0),
+            Hit(2, "projects:app/app.py", "app/app.py\n\nlimiter = Limiter(key_func=session_key_func)\n", 0.9)]
+    monkeypatch.setattr(history, "retrieve", lambda conn, q, cfg, project: hits)
+    monkeypatch.setattr(history, "pr_map", lambda r: ({}, None))
+    sent = {}
+    monkeypatch.setattr(history, "chat", lambda m, s, u: sent.update(user=u) or "Added in [x]")
+    rep = history.why(None, "app", "rate limiting", PipelineConfig(), root=repo.parent)
+    assert [c.subject for c in rep.commits] == ["Add app"]
+    assert "app.py" in sent["user"] and "Limiter" in sent["user"]
+
+
+def test_why_without_introducing_commit_does_not_guess(repo, monkeypatch):
+    monkeypatch.setattr(history, "retrieve", lambda conn, q, cfg, project: [Hit(1, "projects:app/__overview__", "o", 1.0)])
+    monkeypatch.setattr(history, "chat", lambda *a: pytest.fail("LLM must not be asked to guess"))
+    rep = history.why(None, "app", "anything", PipelineConfig(), root=repo.parent)
+    assert rep.commits == [] and "not found" in rep.text.lower()

@@ -110,6 +110,20 @@ def changes(project: str, since: str = typer.Option("1 week ago", "--since"),
     _print_report(rep)
 
 
+@app.command()
+def why(project: str, topic: str, config_name: str = typer.Option("baseline", "--config")) -> None:
+    """Find when and why something was added to a project, from the introducing commit/PR."""
+    from stuffrag import history
+
+    try:
+        with db.connect() as conn:
+            rep = history.why(conn, project, topic, config.get(config_name))
+    except history.HistoryError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1)
+    _print_report(rep)
+
+
 @eval_app.command("run")
 def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
     """Run all eval questions through a pipeline config and record metrics."""
