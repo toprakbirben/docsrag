@@ -85,3 +85,24 @@ def eval_compare(run_a: Path, run_b: Path) -> None:
 
     for line in evals.compare(json.loads(run_a.read_text()), json.loads(run_b.read_text())):
         typer.echo(line)
+
+
+@eval_app.command("spotcheck")
+def eval_spotcheck(run_file: Path, n: int = typer.Option(10, "--n")) -> None:
+    """Show the first N judged answers and ask whether you agree with the judge (y/n)."""
+    import json
+    from stuffrag import evals
+
+    questions = {q.id: q for q in evals.load_questions()}
+    judged = [r for r in json.loads(run_file.read_text())["results"] if r["judge"] is not None][:n]
+    disagreed = []
+    for i, r in enumerate(judged, 1):
+        q = questions[r["id"]]
+        typer.echo(f"\n--- {i}/{len(judged)}  {r['id']}\nQ: {q.question}\n"
+                   f"Expected facts: {', '.join(q.expected_answer)}\nAnswer:\n{r['answer']}\n"
+                   f"Judge says correct: {'Yes' if r['judge'] else 'No'}")
+        if not typer.confirm("Agree with the judge?", default=None):
+            disagreed.append(r["id"])
+    typer.echo(f"\njudge agreement: {len(judged) - len(disagreed)}/{len(judged)}")
+    if disagreed:
+        typer.echo(f"disagreed on: {', '.join(disagreed)}")
