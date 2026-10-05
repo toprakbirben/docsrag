@@ -166,7 +166,7 @@ def test_changes_prompt_has_messages_diffs_and_never_the_secret(repo, monkeypatc
     commit(repo, "Add config", "2026-09-21", {"config.py": f"KEY = '{AWS}'\n", "b.py": "rest_days = 2\n"})
     sent = {}
     monkeypatch.setattr(history, "pr_map", lambda r: ({}, "no origin remote; using commit messages only"))
-    monkeypatch.setattr(history, "chat", lambda m, s, u: sent.update(system=s, user=u) or "Added: rest days [abc1234]")
+    monkeypatch.setattr(history, "chat", lambda m, s, u, options=None: sent.update(system=s, user=u) or "Added: rest days [abc1234]")
     rep = history.changes("app", "2026-09-05", None, PipelineConfig(), root=repo.parent)
     assert "Merge pull request #7" in sent["user"] and "rest_days" in sent["user"]
     assert AWS not in sent["user"]
@@ -202,7 +202,7 @@ def test_why_explains_from_the_introducing_commit(repo, monkeypatch):
     monkeypatch.setattr(history, "retrieve", lambda conn, q, cfg, project: hits)
     monkeypatch.setattr(history, "pr_map", lambda r: ({}, None))
     sent = {}
-    monkeypatch.setattr(history, "chat", lambda m, s, u: sent.update(user=u) or "Added in [x]")
+    monkeypatch.setattr(history, "chat", lambda m, s, u, options=None: sent.update(user=u) or "Added in [x]")
     rep = history.why(None, "app", "rate limiting", PipelineConfig(), root=repo.parent)
     assert [c.subject for c in rep.commits] == ["Add app"]
     assert "app.py" in sent["user"] and "Limiter" in sent["user"]
@@ -248,3 +248,12 @@ def test_invented_links_are_stripped_but_citations_kept():
 def test_links_present_in_the_source_survive():
     text = "See [docs](https://slowapi.readthedocs.io) for limits."
     assert history.strip_invented_links(text, "PR body: https://slowapi.readthedocs.io") == text
+
+
+def test_history_calls_cap_output_and_penalise_repetition(repo, monkeypatch):
+    # Real run on mtt: at temperature 0 the model looped on the same bullets until the 600s timeout.
+    seen = {}
+    monkeypatch.setattr(history, "pr_map", lambda r: ({}, None))
+    monkeypatch.setattr(history, "chat", lambda m, s, u, options=None: seen.update(options or {}) or "ok")
+    history.changes("app", "2026-09-05", None, PipelineConfig(), root=repo.parent)
+    assert seen["num_predict"] <= 2000 and seen["repeat_penalty"] > 1.1

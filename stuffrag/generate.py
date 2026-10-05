@@ -35,19 +35,23 @@ def parse_citations(text: str, hits: list[Hit]) -> list[int]:
     return out
 
 
-def chat(model: str, system: str, user: str, json_mode: bool = False) -> str:
+def chat(model: str, system: str, user: str, json_mode: bool = False, options: dict | None = None) -> str:
     payload = {
         "model": model,
         "stream": False,
         "think": False,
-        "options": {"temperature": 0, "num_ctx": NUM_CTX},
+        "options": {"temperature": 0, "num_ctx": NUM_CTX, **(options or {})},
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
     if json_mode:
         payload["format"] = "json"
     r = httpx.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=600)
     r.raise_for_status()
-    return r.json()["message"]["content"].strip()
+    body = r.json()
+    text = body["message"]["content"].strip()
+    if body.get("done_reason") == "length":  # hit num_predict/num_ctx: never pass a partial answer off as whole
+        text += "\n\n(answer cut off at the output limit)"
+    return text
 
 
 def generate(question: str, hits: list[Hit], cfg: PipelineConfig) -> Answer:

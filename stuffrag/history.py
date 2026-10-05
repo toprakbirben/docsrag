@@ -12,6 +12,9 @@ from stuffrag.retrieve import retrieve
 COMMIT_CAP = 6_000   # floor of filtered-diff chars per commit (a commit gets more if the total allows)
 TOTAL_CAP = 40_000   # chars of diff across all commits sent to the LLM
 OMITTED = "(omitted: matched a secret pattern)"
+# qwen3 at temperature 0 loops on long diff prompts (mtt July: 121 lines, 21 unique, until timeout);
+# a wider repeat window breaks the loop and num_predict bounds the worst case.
+HISTORY_OPTIONS = {"num_predict": 2000, "repeat_penalty": 1.15, "repeat_last_n": 512}
 TRUNCATED = "\n... (diff truncated: see the full file list above)\n"
 FILE_HEADER = re.compile(r"^diff --git a/.* b/(.*)$", re.M)
 
@@ -223,7 +226,7 @@ def changes(project: str, since: str, until: str | None, cfg: PipelineConfig, ro
     notes = [warning] if warning else []
     budget(cs, notes)
     context = f"Project: {project}\n\n{render(cs)}"
-    text = strip_invented_links(chat(cfg.llm, CHANGES_SYSTEM, context), context)
+    text = strip_invented_links(chat(cfg.llm, CHANGES_SYSTEM, context, options=HISTORY_OPTIONS), context)
     return Report(text, cs, notes + omission_notes(cs))
 
 
@@ -272,5 +275,5 @@ def why(conn, project: str, topic: str, cfg: PipelineConfig, root: Path | None =
         return Report(NOT_FOUND, [], notes)
     budget(found, notes)
     context = f"Project: {project}\nQuestion: when and why was this added: {topic}\n\n{render(found)}"
-    text = strip_invented_links(chat(cfg.llm, WHY_SYSTEM, context), context)
+    text = strip_invented_links(chat(cfg.llm, WHY_SYSTEM, context, options=HISTORY_OPTIONS), context)
     return Report(text, found, notes + omission_notes(found))

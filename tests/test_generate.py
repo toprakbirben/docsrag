@@ -36,3 +36,17 @@ def test_chat_sets_context_window_so_passages_are_not_silently_truncated(monkeyp
     generate.chat("qwen3:8b", "sys", "user")
     assert sent["options"]["num_ctx"] >= 16384
     assert sent["think"] is False and sent["options"]["temperature"] == 0
+
+
+def test_chat_merges_options_and_says_when_an_answer_was_cut(monkeypatch):
+    # A capped answer must not look complete: the reader should know it stopped at the limit.
+    sent = {}
+
+    class R:
+        def raise_for_status(self): ...
+        def json(self): return {"message": {"content": "partial"}, "done_reason": "length"}
+
+    monkeypatch.setattr(generate.httpx, "post", lambda url, json, timeout: sent.update(json) or R())
+    out = generate.chat("qwen3:8b", "sys", "user", options={"num_predict": 5})
+    assert sent["options"]["num_predict"] == 5 and sent["options"]["num_ctx"] >= 16384
+    assert out.startswith("partial") and "cut off" in out
