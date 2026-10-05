@@ -4,6 +4,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from stuffrag.config import PipelineConfig
+from stuffrag.generate import chat
 from stuffrag.ingest.projects import ROOT, SKIP_PROJECTS, _allowed, is_secret
 
 COMMIT_CAP = 6_000   # chars of filtered diff per commit
@@ -159,3 +161,50 @@ def merge_of(repo: Path, sha: str) -> str | None:
     # commit more than one step below its merge is never seen as reaching it.
     merges = set(_git(repo, "rev-list", "--ancestry-path", "--merges", f"{sha}..HEAD").split())
     return next((m for m in reversed(mainline) if m in merges), None)
+
+
+CHANGES_SYSTEM = """You explain what changed in a software project, using ONLY the commits below
+(commit message, PR description, diff). Write three sections: Added, Removed, Changed.
+Cite every point with its commit id in square brackets, e.g. [abc1234].
+If a message or PR description claims something its diff does not show, or the diff does something
+the message does not mention, list it under a fourth section "Message vs diff". Do not invent changes."""
+
+
+@dataclass
+class Report:
+    text: str
+    commits: list[Commit]
+    notes: list[str]
+
+
+def render(commits: list[Commit]) -> str:
+    parts = []
+    for c in commits:
+        head = f"[{c.sha[:7]}] {c.date} {c.subject}"
+        if c.pr:
+            head += f"\nPR #{c.pr['number']}: {c.pr['title']}\n{c.pr['body']}"
+        if c.body:
+            head += f"\nMessage:\n{c.body}"
+        parts.append(f"{head}\nDiff{' (file stats only)' if c.reduced else ''}:\n{c.diff or '(no code changes shown)'}")
+    return "\n\n---\n\n".join(parts)
+
+
+def omission_notes(commits: list[Commit]) -> list[str]:
+    secret = sorted({p for c in commits for p in c.secret_files})
+    hidden = sum(c.hidden_files for c in commits)
+    notes = [f"{len(secret)} files omitted as secret: {', '.join(secret)}"] if secret else []
+    return notes + ([f"{hidden} hidden/non-code file diffs not shown"] if hidden else [])
+
+
+def changes(project: str, since: str, until: str | None, cfg: PipelineConfig, root: Path | None = None) -> Report:
+    repo = repo_for(project, root or ROOT)
+    cs = commits(repo, since, until)
+    if not cs:
+        raise HistoryError(f"no commits in {project} for since={since!r} until={until!r}")
+    prs, warning = pr_map(repo)
+    for c in cs:
+        load(repo, c, prs)
+    notes = [warning] if warning else []
+    budget(cs, notes)
+    text = chat(cfg.llm, CHANGES_SYSTEM, f"Project: {project}\n\n{render(cs)}")
+    return Report(text, cs, notes + omission_notes(cs))

@@ -84,6 +84,32 @@ def ask(question: str, config_name: str = typer.Option("baseline", "--config"),
             typer.echo(f"  [c{cid}] {by_id[cid].document_id}")
 
 
+def _print_report(rep) -> None:
+    typer.echo(rep.text)
+    if rep.commits:
+        typer.echo("\nCommits:")
+        for c in rep.commits:
+            pr = f" [PR #{c.pr['number']}]" if c.pr else ""
+            typer.echo(f"  {c.sha[:7]} {c.date} {c.subject}{pr}")
+    for n in rep.notes:
+        typer.echo(f"note: {n}", err=True)
+
+
+@app.command()
+def changes(project: str, since: str = typer.Option("1 week ago", "--since"),
+            until: str = typer.Option(None, "--until"),
+            config_name: str = typer.Option("baseline", "--config")) -> None:
+    """Explain what was added/removed/changed in a project, from diffs + commit/PR messages."""
+    from stuffrag import history
+
+    try:
+        rep = history.changes(project, since, until, config.get(config_name))
+    except history.HistoryError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1)
+    _print_report(rep)
+
+
 @eval_app.command("run")
 def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
     """Run all eval questions through a pipeline config and record metrics."""

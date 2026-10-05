@@ -155,3 +155,27 @@ def test_merge_of_finds_the_merge_that_brought_a_branch_commit_in(repo):
     # Direct mainline commits must not be attributed to a later PR merge.
     assert history.merge_of(repo, git(repo, "log", "--format=%H", "--grep", "Add app")) is None
     assert history.merge_of(repo, git(repo, "rev-parse", "HEAD")) is None
+
+
+from typer.testing import CliRunner
+
+from stuffrag.config import PipelineConfig
+
+
+def test_changes_prompt_has_messages_diffs_and_never_the_secret(repo, monkeypatch):
+    commit(repo, "Add config", "2026-09-21", {"config.py": f"KEY = '{AWS}'\n", "b.py": "rest_days = 2\n"})
+    sent = {}
+    monkeypatch.setattr(history, "pr_map", lambda r: ({}, "no origin remote; using commit messages only"))
+    monkeypatch.setattr(history, "chat", lambda m, s, u: sent.update(system=s, user=u) or "Added: rest days [abc1234]")
+    rep = history.changes("app", "2026-09-05", None, PipelineConfig(), root=repo.parent)
+    assert "Merge pull request #7" in sent["user"] and "rest_days" in sent["user"]
+    assert AWS not in sent["user"]
+    assert "Message vs diff" in sent["system"]
+    assert any("config.py" in n for n in rep.notes) and any("commit messages only" in n for n in rep.notes)
+
+
+def test_cli_changes_empty_range_exits_1(repo, monkeypatch):
+    from stuffrag import cli
+    monkeypatch.setattr(history, "ROOT", repo.parent)
+    out = CliRunner().invoke(cli.app, ["changes", "app", "--since", "2030-01-01"])
+    assert out.exit_code == 1 and "no commits" in out.output
