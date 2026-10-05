@@ -114,3 +114,44 @@ def test_repo_for_rejects_non_git_and_skipped(tmp_path):
         history.repo_for("point cloud", tmp_path)
     with pytest.raises(history.HistoryError, match="unknown project"):
         history.repo_for("LLaVA", tmp_path)
+
+
+import json
+
+
+def test_pr_text_attaches_to_its_merge_commit(repo, monkeypatch):
+    git(repo, "remote", "add", "origin", "https://github.com/me/app.git")
+    merge = history.commits(repo, "2026-09-05", "2026-09-15")[0].sha
+    out = json.dumps([{"number": 7, "title": "Stamina", "body": "Rest days recover stamina",
+                       "mergeCommit": {"oid": merge}}])
+    calls = []
+    monkeypatch.setattr(history, "_gh", lambda *a: calls.append(a) or subprocess.CompletedProcess(a, 0, out, ""))
+    prs, warning = history.pr_map(repo)
+    assert warning is None and prs[merge]["number"] == 7
+    assert "me/app" in calls[0]
+
+
+def test_gh_failure_warns_and_continues(repo, monkeypatch):
+    git(repo, "remote", "add", "origin", "git@github.com:me/app.git")
+
+    def boom(*a):
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr(history, "_gh", boom)
+    prs, warning = history.pr_map(repo)
+    assert prs == {} and "gh" in warning
+
+
+def test_no_github_origin_warns(repo):
+    prs, warning = history.pr_map(repo)
+    assert prs == {} and "commit messages only" in warning
+
+
+def test_merge_of_finds_the_merge_that_brought_a_branch_commit_in(repo):
+    # `why` finds the branch commit that introduced a line; its PR text hangs off the merge.
+    f1 = git(repo, "log", "--all", "--format=%H", "--grep", "Add stamina")
+    merge = history.commits(repo, "2026-09-05", "2026-09-15")[0].sha
+    assert history.merge_of(repo, f1) == merge
+    # Direct mainline commits must not be attributed to a later PR merge.
+    assert history.merge_of(repo, git(repo, "log", "--format=%H", "--grep", "Add app")) is None
+    assert history.merge_of(repo, git(repo, "rev-parse", "HEAD")) is None

@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -120,3 +121,41 @@ def budget(commits: list[Commit], notes: list[str]) -> None:
         big = max(full, key=lambda c: len(c.diff))
         big.diff, big.reduced = big.stat, True
         notes.append(f"{big.sha[:7]} too large: shown as file stats only")
+
+
+GITHUB = re.compile(r"github\.com[:/](.+?)(?:\.git)?/?$")
+NO_PRS = "using commit messages only"
+
+
+def _gh(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
+
+
+def pr_map(repo: Path) -> tuple[dict[str, dict], str | None]:
+    """Merged PRs keyed by merge commit SHA (works for merge and squash). Read-only; never fails."""
+    try:
+        origin = _git(repo, "remote", "get-url", "origin").strip()
+    except HistoryError:
+        return {}, f"no origin remote; {NO_PRS}"
+    m = GITHUB.search(origin)
+    if not m:
+        return {}, f"origin is not on GitHub; {NO_PRS}"
+    try:
+        r = _gh("pr", "list", "-R", m.group(1), "--state", "merged", "--limit", "500",
+                "--json", "number,title,body,mergeCommit")
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return {}, f"gh unavailable ({type(e).__name__}); {NO_PRS}"
+    if r.returncode:
+        return {}, f"gh failed ({r.stderr.strip()[:200]}); {NO_PRS}"
+    return {p["mergeCommit"]["oid"]: p for p in json.loads(r.stdout) if p.get("mergeCommit")}, None
+
+
+def merge_of(repo: Path, sha: str) -> str | None:
+    """The first-parent merge that brought `sha` into the current branch (None for direct commits)."""
+    mainline = _git(repo, "rev-list", "--first-parent", "HEAD").split()
+    if sha in mainline:
+        return None  # on the mainline itself: any later merge is unrelated
+    # Not `log --first-parent --ancestry-path`: that only follows first-parent edges, so a branch
+    # commit more than one step below its merge is never seen as reaching it.
+    merges = set(_git(repo, "rev-list", "--ancestry-path", "--merges", f"{sha}..HEAD").split())
+    return next((m for m in reversed(mainline) if m in merges), None)
