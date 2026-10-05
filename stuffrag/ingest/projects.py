@@ -9,6 +9,8 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("STUFFRAG_PROJECTS", Path.home() / "projects"))
 # Third-party clones and backups: they'd crowd my own projects out of retrieval.
+# stuffrag indexes itself: its eval answer key must never be retrievable.
+SKIP_FILES = {"stuffrag/evals/questions.yaml"}
 SKIP_PROJECTS = {"agency-agents", "career-ops", "LLaVA", "llama-vision-boilerplate", "morethantasks backup"}
 
 EXTS = {".md", ".txt", ".rst", ".py", ".ipynb", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cs", ".gd", ".go",
@@ -31,6 +33,11 @@ SECRET_TEXT = re.compile("|".join([
     r"xox[bpas]-[A-Za-z0-9-]{10,}",
     r"AIza[0-9A-Za-z_-]{35}",
     r"(?i:api[_-]?key|secret|passw(?:or)?d|token)[\"']?\s*[:=]\s*[\"'][^\"'\s]{12,}[\"']",
+    # env/compose style: unquoted literal after an UPPERCASE credential name (not ${REF}, digits, None)
+    r"\b[A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY)[A-Z0-9_]*[ \t]*[:=][ \t]*"
+    r"(?![\"'$\{<\d]|(?:None|null|true|false)\b)[A-Za-z0-9_+/=!@%^&*~-]{4,}(?=[\s,;]|$)",
+    r"\$\{[A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY)[A-Z0-9_]*:?-[^}]+\}",  # ${PASS:-default}
+    r"[a-z][a-z0-9+.-]*://[^/\s:@$]+:[^/\s@$]+@",  # user:password@ in a URL
 ]))
 
 
@@ -130,7 +137,7 @@ def collect(root: Path = ROOT, skip: set[str] = SKIP_PROJECTS) -> tuple[list[dic
             if is_secret(rel, ""):
                 skipped.append(label)
                 continue
-            if not _allowed(rel) or (body := _read(project / rel)) is None or not body.strip():
+            if label in SKIP_FILES or not _allowed(rel) or (body := _read(project / rel)) is None or not body.strip():
                 continue
             if is_secret(rel, body):
                 skipped.append(label)

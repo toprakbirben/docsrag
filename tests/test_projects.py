@@ -120,3 +120,36 @@ def test_docs_folders_are_hidden(rel):
     # Toprak's choice: docs/ (specs/plans, vendored library docs) stays out of the index.
     from stuffrag.ingest.projects import _allowed
     assert not _allowed(rel)
+
+
+@pytest.mark.parametrize("text", [
+    "    environment:\n      POSTGRES_PASSWORD: devpass123\n",              # compose literal
+    "DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD:-fuutball}@db/x",  # fallback default
+    "url = 'postgresql://app:hunter22@localhost/db'",                       # inline URL credentials
+    "JWT_SECRET=abcd1234\n",
+])
+def test_env_style_credentials_are_rejected(text):
+    # An eval leaked fuutball's compose default DB password: unquoted/env-style values must count too.
+    assert is_secret("docker-compose.yml", text)
+
+
+@pytest.mark.parametrize("text", [
+    "      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}\n",                    # reference, no value
+    "DATABASE_URL=postgresql://${USER}:${PASS}@db/x",
+    "PASSWORD_MIN_LENGTH = 8\n",
+    "API_TOKEN = None\n",
+    "SECRET_KEY = os.environ['SECRET_KEY']\n",
+    "def login(password: str): ...\n",
+])
+def test_credential_references_are_not_secrets(text):
+    # Over-blocking these would hide most auth/config code, which is exactly what gets asked about.
+    assert not is_secret("settings.py", text)
+
+
+def test_eval_answer_key_is_never_indexed(tmp_path):
+    # stuffrag indexes itself; its questions.yaml would hand retrieval the gold answers.
+    (tmp_path / "stuffrag/evals").mkdir(parents=True)
+    (tmp_path / "stuffrag/evals/questions.yaml").write_text("- id: x\n")
+    (tmp_path / "stuffrag/main.py").write_text("print(1)\n")
+    docs, _ = collect(tmp_path, skip=set())
+    assert "projects:stuffrag/evals/questions.yaml" not in {d["id"] for d in docs}
