@@ -9,6 +9,9 @@ from stuffrag.config import EMBEDDERS, OLLAMA_URL, PipelineConfig
 
 # (document prefix, query prefix) for models trained with task prefixes.
 PREFIX = {"nomic-embed-text": ("search_document: ", "search_query: ")}
+# Model context in tokens. Ollama caps one input at num_batch (default 2048), so raise it to the
+# full context or dense code chunks fail with "input length exceeds the context length".
+CONTEXT = {"bge-m3": 8192, "nomic-embed-text": 2048}
 
 
 def table(embedder: str) -> str:
@@ -23,7 +26,8 @@ def embed(texts: list[str], embedder: str, kind: str = "document") -> list[list[
     prefix = PREFIX.get(embedder, ("", ""))[0 if kind == "document" else 1]
     r = httpx.post(
         f"{OLLAMA_URL}/api/embed",
-        json={"model": embedder, "input": [prefix + t for t in texts]},
+        json={"model": embedder, "input": [prefix + t for t in texts],
+              "options": {"num_batch": CONTEXT[embedder]}},
         timeout=600,
     )
     r.raise_for_status()
@@ -40,6 +44,15 @@ def ensure_table(conn: psycopg.Connection, embedder: str) -> str:
     return t
 
 
+def chunk_rows(docs: list[tuple], cfg: PipelineConfig) -> list[tuple[str, str, int, str]]:
+    """(doc_id, path, label, body) -> chunk rows; a label (project/path) prefixes every chunk."""
+    return [
+        (doc_id, cfg.chunker, i, f"{label}\n\n{text}" if label else text)
+        for doc_id, path, label, body in docs
+        for i, text in enumerate(chunk(path or doc_id, body, cfg.chunk_tokens, cfg.chunk_overlap))
+    ]
+
+
 def index(
     conn: psycopg.Connection,
     cfg: PipelineConfig,
@@ -48,15 +61,11 @@ def index(
 ) -> dict:
     """Chunk documents lacking chunks for cfg.chunker, then embed chunks lacking vectors. Resumable."""
     docs = conn.execute(
-        """SELECT id, metadata->>'path', body FROM documents d
+        """SELECT id, metadata->>'path', metadata->>'label', body FROM documents d
            WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id AND c.chunker = %s)""",
         (cfg.chunker,),
     ).fetchall()
-    rows = [
-        (doc_id, cfg.chunker, i, text)
-        for doc_id, path, body in docs
-        for i, text in enumerate(chunk(path or doc_id, body, cfg.chunk_tokens, cfg.chunk_overlap))
-    ]
+    rows = chunk_rows(docs, cfg)
     with conn.cursor() as cur:
         cur.executemany(
             "INSERT INTO chunks (document_id, chunker, ordinal, text) VALUES (%s, %s, %s, %s)", rows

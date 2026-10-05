@@ -21,10 +21,19 @@ def test_rrf_with_empty_fulltext_keeps_dense_order():
 
 def test_retrieve_hybrid_rerank_pipeline_order(monkeypatch):
     calls = []
-    monkeypatch.setattr(retrieve, "dense", lambda c, q, cfg, k: calls.append(("dense", k)) or [h(1), h(2)])
-    monkeypatch.setattr(retrieve, "fulltext", lambda c, q, cfg, k: calls.append(("ft", k)) or [h(3)])
+    monkeypatch.setattr(retrieve, "dense", lambda c, q, cfg, k, prefix=None: calls.append(("dense", k)) or [h(1), h(2)])
+    monkeypatch.setattr(retrieve, "fulltext", lambda c, q, cfg, k, prefix=None: calls.append(("ft", k)) or [h(3)])
     monkeypatch.setattr(retrieve, "rerank", lambda q, hits: calls.append(("rr", len(hits))) or hits[::-1])
     cfg = PipelineConfig(hybrid=True, rerank=True, top_k=2, candidate_k=30)
     out = retrieve.retrieve(None, "q", cfg)
     assert calls == [("dense", 30), ("ft", 30), ("rr", 3)]
     assert len(out) == 2
+
+
+def test_project_filter_reaches_both_retrievers(monkeypatch):
+    # If only dense were filtered, BM25 would leak other projects back in via fusion.
+    seen = []
+    monkeypatch.setattr(retrieve, "dense", lambda c, q, cfg, k, prefix=None: seen.append(prefix) or [h(1)])
+    monkeypatch.setattr(retrieve, "fulltext", lambda c, q, cfg, k, prefix=None: seen.append(prefix) or [])
+    retrieve.retrieve(None, "q", PipelineConfig(hybrid=True), project="collabdocs")
+    assert seen == ["projects:collabdocs/%", "projects:collabdocs/%"]

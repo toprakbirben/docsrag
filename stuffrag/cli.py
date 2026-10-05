@@ -19,9 +19,11 @@ def db_init() -> None:
 
 @app.command()
 def sync(source: str) -> None:
-    """Ingest a source into the documents table. Sources: fastapi."""
+    """Ingest a source into the documents table. Sources: fastapi, projects."""
+    if source == "projects":
+        return _sync_projects()
     if source != "fastapi":
-        raise typer.BadParameter(f"unknown source {source!r}; available: fastapi")
+        raise typer.BadParameter(f"unknown source {source!r}; available: fastapi, projects")
     from stuffrag.ingest import fastapi_repo
 
     repo = fastapi_repo.checkout()
@@ -32,6 +34,21 @@ def sync(source: str) -> None:
         new, changed = db.upsert_documents(conn, docs)
     typer.echo(f"fastapi {fastapi_repo.FASTAPI_TAG}: {len(docs)} docs ({new} new, {changed} changed), "
                f"{len(missing)} unresolved includes")
+    _index("baseline")
+
+
+def _sync_projects() -> None:
+    from stuffrag.ingest import projects
+
+    docs, skipped = projects.collect()
+    for path in skipped:
+        typer.echo(f"skipped (secret): {path}", err=True)
+    with db.connect() as conn:
+        new, changed = db.upsert_documents(conn, docs)
+        deleted = db.delete_missing(conn, "projects", docs)
+    n_proj = len({d["metadata"]["project"] for d in docs})
+    typer.echo(f"projects {projects.ROOT}: {n_proj} projects, {len(docs)} docs ({new} new, {changed} changed, "
+               f"{deleted} deleted), {len(skipped)} secret files skipped")
     _index("baseline")
 
 
@@ -52,12 +69,13 @@ def index_cmd(config_name: str = typer.Option("baseline", "--config")) -> None:
 
 
 @app.command()
-def ask(question: str, config_name: str = typer.Option("baseline", "--config")) -> None:
+def ask(question: str, config_name: str = typer.Option("baseline", "--config"),
+        project: str = typer.Option(None, "--project", help="Search only this ~/projects folder.")) -> None:
     """Answer a question from indexed sources, with citations."""
     from stuffrag import generate
 
     with db.connect() as conn:
-        answer = generate.ask(conn, question, config.get(config_name))
+        answer = generate.ask(conn, question, config.get(config_name), project)
     typer.echo(answer.text)
     by_id = {h.chunk_id: h for h in answer.hits}
     if answer.citations:

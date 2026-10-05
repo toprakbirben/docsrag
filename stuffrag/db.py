@@ -76,6 +76,20 @@ def diff_documents(existing: dict[str, str], docs: list[dict]) -> tuple[list[str
     return new, changed
 
 
+def stale_ids(existing: list[str], docs: list[dict]) -> list[str]:
+    keep = {d["id"] for d in docs}
+    return [i for i in existing if i not in keep]
+
+
+def delete_missing(conn: psycopg.Connection, source_type: str, docs: list[dict]) -> int:
+    """Drop this source's docs that no longer exist (chunks + vectors cascade). Returns count."""
+    existing = [r[0] for r in conn.execute("SELECT id FROM documents WHERE source_type = %s", (source_type,))]
+    gone = stale_ids(existing, docs)
+    conn.execute("DELETE FROM documents WHERE id = ANY(%s)", (gone,))
+    conn.commit()
+    return len(gone)
+
+
 def upsert_documents(conn: psycopg.Connection, docs: list[dict]) -> tuple[int, int]:
     """Insert new docs, replace changed ones and drop their stale chunks. Returns (new, changed)."""
     ids = [d["id"] for d in docs]

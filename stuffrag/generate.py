@@ -58,5 +58,5 @@ def generate(question: str, hits: list[Hit], cfg: PipelineConfig) -> Answer:
     return Answer(text, parse_citations(text, hits), hits)
 
 
-def ask(conn: psycopg.Connection, question: str, cfg: PipelineConfig) -> Answer:
-    return generate(question, retrieve(conn, question, cfg), cfg)
+def ask(conn: psycopg.Connection, question: str, cfg: PipelineConfig, project: str | None = None) -> Answer:
+    return generate(question, retrieve(conn, question, cfg, project), cfg)

@@ -10,6 +10,7 @@ Machine: Apple M4, 16 GB. Ollama, Docker, psql, uv, Python 3.12 present. New pro
 - **Vector store: Postgres 16 + pgvector (Docker)**. One DB gives vectors, `tsvector` full-text for hybrid search, and SQL filters (email date/sender, source type). Chroma can't do the last two cleanly.
 - **Embeddings:** `bge-m3` (default) and `nomic-embed-text` via Ollama — both compared in evals. **Reranker:** `BAAI/bge-reranker-v2-m3` via `sentence-transformers` CrossEncoder on MPS. **LLM:** `qwen3:8b` via Ollama.
 - **Gmail:** Gmail API, `gmail.readonly` scope, OAuth desktop flow, incremental sync via `historyId`. Token stored locally in `~/.stuffrag/`; email never leaves the machine.
+- **Projects (`stuff sync projects`, added 2026-10-05):** every own folder in `~/projects` (third-party clones and backups skipped). Git repos list files via `git ls-files`, others by walk with `node_modules`/`vendor`/venvs pruned; code/doc extension allow-list, <=100 KB. **Secrets are never indexed:** `.env*`, keys and credential files are rejected by name, and any file whose content matches a secret pattern is skipped whole (paths reported, never content). Each project also gets a deterministic `__overview__` doc (README, deps, languages, layout, git history) for big-picture questions; chunks are prefixed with `project/path`. `stuff ask --project X` restricts retrieval to one project.
 - **Interface:** Typer CLI (`stuff sync|ask|eval`) + small local FastAPI web chat on `localhost`. Background sync via a `launchd` plist.
 
 ## Architecture
