@@ -177,6 +177,14 @@ A diff marked truncated (or "file list only") is incomplete: the file list is co
 a message is unsupported because its change is missing from a truncated diff."""
 
 
+MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+
+
+def strip_invented_links(text: str, context: str) -> str:
+    """Drop markdown links whose URL isn't in the source context (the model invents repo URLs)."""
+    return MD_LINK.sub(lambda m: m.group(0) if m.group(2) in context else f"[{m.group(1)}]", text)
+
+
 @dataclass
 class Report:
     text: str
@@ -214,7 +222,8 @@ def changes(project: str, since: str, until: str | None, cfg: PipelineConfig, ro
         load(repo, c, prs)
     notes = [warning] if warning else []
     budget(cs, notes)
-    text = chat(cfg.llm, CHANGES_SYSTEM, f"Project: {project}\n\n{render(cs)}")
+    context = f"Project: {project}\n\n{render(cs)}"
+    text = strip_invented_links(chat(cfg.llm, CHANGES_SYSTEM, context), context)
     return Report(text, cs, notes + omission_notes(cs))
 
 
@@ -262,5 +271,6 @@ def why(conn, project: str, topic: str, cfg: PipelineConfig, root: Path | None =
     if not found:
         return Report(NOT_FOUND, [], notes)
     budget(found, notes)
-    text = chat(cfg.llm, WHY_SYSTEM, f"Project: {project}\nQuestion: when and why was this added: {topic}\n\n{render(found)}")
+    context = f"Project: {project}\nQuestion: when and why was this added: {topic}\n\n{render(found)}"
+    text = strip_invented_links(chat(cfg.llm, WHY_SYSTEM, context), context)
     return Report(text, found, notes + omission_notes(found))

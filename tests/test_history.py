@@ -237,3 +237,14 @@ def test_single_commit_gets_the_whole_budget(repo):
     history.load(repo, cs[0], {})
     history.budget(cs, [])
     assert len(cs[0].diff) > history.COMMIT_CAP and "truncated" not in cs[0].diff
+
+
+def test_invented_links_are_stripped_but_citations_kept():
+    # Real run: the model wrapped citations in made-up github.com/your-repo URLs.
+    text = "Added in [697b2ea](https://github.com/your-repo/fuutball/commit/697b2ea) on 2026-02-28."
+    assert history.strip_invented_links(text, "context mentions nothing") == "Added in [697b2ea] on 2026-02-28."
+
+
+def test_links_present_in_the_source_survive():
+    text = "See [docs](https://slowapi.readthedocs.io) for limits."
+    assert history.strip_invented_links(text, "PR body: https://slowapi.readthedocs.io") == text
