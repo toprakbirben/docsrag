@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(os.environ.get("DOCSRAG_PROJECTS", Path.home() / "projects"))
 # Third-party clones and backups: they'd crowd my own projects out of retrieval.
 # docsrag indexes itself: its eval answer key must never be retrievable.
-SKIP_FILES = {"docsrag/evals/questions.yaml"}
+SKIP_FILES = {"docsrag/evals/questions.yaml", "docsrag/evals/questions.local.yaml"}
 SKIP_PROJECTS = {"agency-agents", "career-ops", "LLaVA", "llama-vision-boilerplate", "morethantasks backup"}
 
 EXTS = {".md", ".txt", ".rst", ".py", ".ipynb", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cs", ".gd", ".go",

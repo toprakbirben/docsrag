@@ -1,3 +1,5 @@
+import pytest
+
 from docsrag import evals
 from docsrag.retrieve import Hit
 
@@ -139,3 +141,35 @@ def test_evaluate_records_context_chars_from_top_k_hits(monkeypatch):
     r = evals.evaluate(object(), q, cfg)
     # only the top_k=2 hits actually go into the prompt; the 3rd must not count.
     assert r["context_chars"] == len(hits[0].text) + len(hits[1].text)
+
+
+def _yaml(path, ids, source_type="fastapi"):
+    path.write_text("".join(f"- id: {i}\n  question: q\n  expected_answer: []\n  gold_sources: []\n"
+                            f"  source_type: {source_type}\n" for i in ids))
+    return path
+
+
+def test_local_questions_are_added_when_present(tmp_path):
+    # Your own project questions live in a gitignored file; eval runs must still include them.
+    qs = evals.load_questions(_yaml(tmp_path / "q.yaml", ["fa-01"]),
+                              _yaml(tmp_path / "q.local.yaml", ["pr-01"], "projects"))
+    assert [q.id for q in qs] == ["fa-01", "pr-01"]
+
+
+def test_missing_or_empty_local_file_means_public_questions_only(tmp_path):
+    # A fresh clone has no local file; an empty one is a user who hasn't written questions yet.
+    public = _yaml(tmp_path / "q.yaml", ["fa-01"])
+    assert [q.id for q in evals.load_questions(public, tmp_path / "nope.yaml")] == ["fa-01"]
+    (tmp_path / "empty.yaml").write_text("# my questions\n")
+    assert [q.id for q in evals.load_questions(public, tmp_path / "empty.yaml")] == ["fa-01"]
+
+
+def test_duplicate_id_across_files_fails_loudly(tmp_path):
+    # Run files key results by id; a clash would silently merge two questions' metrics.
+    with pytest.raises(ValueError, match="fa-01"):
+        evals.load_questions(_yaml(tmp_path / "q.yaml", ["fa-01"]), _yaml(tmp_path / "l.yaml", ["fa-01"]))
+
+
+def test_public_question_file_has_no_private_project_questions():
+    # The repo is public: questions about ~/projects belong in the gitignored local file.
+    assert {q.source_type for q in evals.load_questions(evals.QUESTIONS, None)} == {"fastapi"}

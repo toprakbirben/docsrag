@@ -17,6 +17,7 @@ from docsrag.generate import chat, generate
 from docsrag.retrieve import Hit, retrieve
 
 QUESTIONS = Path("evals/questions.yaml")
+LOCAL_QUESTIONS = Path("evals/questions.local.yaml")  # about your own ~/projects; gitignored
 RUNS = Path("evals/runs")
 JUDGE_SYSTEM = """You grade an answer against expected key facts.
 Reply with JSON {"correct": true} if the answer states all key facts and nothing contradicting them,
@@ -33,8 +34,14 @@ class Question:
     should_refuse: bool = False
 
 
-def load_questions(path: Path = QUESTIONS) -> list[Question]:
-    return [Question(**q) for q in yaml.safe_load(path.read_text())]
+def load_questions(path: Path = QUESTIONS, local: Path | None = LOCAL_QUESTIONS) -> list[Question]:
+    qs = [Question(**q) for q in yaml.safe_load(path.read_text()) or []]
+    if local and local.exists():
+        qs += [Question(**q) for q in yaml.safe_load(local.read_text()) or []]
+    dupes = sorted({q.id for q in qs if sum(o.id == q.id for o in qs) > 1})
+    if dupes:
+        raise ValueError(f"duplicate question ids: {', '.join(dupes)}")
+    return qs
 
 
 def doc_ranking(hits: list[Hit]) -> list[str]:
