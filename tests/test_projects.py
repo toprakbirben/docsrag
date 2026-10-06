@@ -150,9 +150,13 @@ def test_eval_answer_key_is_never_indexed(tmp_path):
     # docsrag indexes itself; its questions.yaml would hand retrieval the gold answers.
     (tmp_path / "docsrag/evals").mkdir(parents=True)
     (tmp_path / "docsrag/evals/questions.yaml").write_text("- id: x\n")
+    (tmp_path / "docsrag/evals/questions.local.yaml").write_text("- id: y\n")
     (tmp_path / "docsrag/main.py").write_text("print(1)\n")
     docs, _ = collect(tmp_path, skip=set())
-    assert "projects:docsrag/evals/questions.yaml" not in {d["id"] for d in docs}
+    ids = {d["id"] for d in docs}
+    assert "projects:docsrag/evals/questions.yaml" not in ids
+    # Gitignored, but a project without .git is walked without .gitignore: skip it explicitly.
+    assert "projects:docsrag/evals/questions.local.yaml" not in ids
 
 
 # Built by concatenation so these fixtures don't read as real keys in this file.

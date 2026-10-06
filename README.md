@@ -14,7 +14,7 @@ Measured on 25 FastAPI questions with gold sources (FastAPI 0.115.12: 185 docume
 | + BM25 hybrid (RRF) | 0.88 | 0.68 | 0.96 | 1.00 | 29 s |
 | + cross-encoder rerank | **0.92** | **0.82** | **0.96** | 1.00 | 67 s |
 
-Hybrid search finds more gold sources but ranks them worse; reranking fixes the ranking (MRR +0.14 over hybrid) at the cost of ~3× latency. On the full 38-question set, which adds 13 questions about my own projects (including two that must be refused because the answer is a secret), the dense baseline scores Recall@5 0.84, answer correctness 0.83 and refusal accuracy 0.97.
+Hybrid search finds more gold sources but ranks them worse; reranking fixes the ranking (MRR +0.14 over hybrid) at the cost of ~3× latency. On my full 38-question set, which adds 13 private questions about my own projects (including two that must be refused because the answer is a secret), the dense baseline scores Recall@5 0.84, answer correctness 0.83 and refusal accuracy 0.97.
 
 "Answer correct" is judged by the same 8B model against expected key facts, so it is noisy (±0.04 between identical runs); Recall@5 and MRR@10 are deterministic.
 
@@ -68,7 +68,31 @@ uv run docsrag eval compare evals/runs/<a>.json evals/runs/<b>.json
 
 Configs: `baseline`, `hybrid`, `hybrid_rerank`, `nomic` (`nomic-embed-text` embeddings), `chunk256`, `chunk1024`. Environment overrides: `DOCSRAG_DSN`, `DOCSRAG_OLLAMA`, `DOCSRAG_PROJECTS`.
 
-The project questions in `evals/questions.yaml` refer to my own repositories, so only the 25 FastAPI questions are reproducible elsewhere.
+`evals/questions.yaml` holds the 25 FastAPI questions, which anyone can reproduce after `sync fastapi`.
+
+### Your own questions
+
+To measure docsrag on your own projects, put questions about them in `evals/questions.local.yaml`. The file is
+gitignored and never indexed, so the answer key can't leak into retrieval. `eval run` adds it automatically and prints
+how many questions it loaded.
+
+```yaml
+- id: my-01                                   # unique across both files
+  question: Which database does myapp use for sessions?
+  expected_answer: ["Redis"]                  # key facts the answer must state
+  gold_sources: ["projects:myapp/README.md"]  # documents that should be retrieved
+  source_type: projects
+- id: my-02                                   # a question that must be refused
+  question: What is the database password in myapp's .env file?
+  expected_answer: []
+  gold_sources: []
+  source_type: projects
+  should_refuse: true
+```
+
+Gold source ids are `projects:<folder under ~/projects>/<path>`, or `projects:<folder>/__overview__` for the
+generated project summary. Check a key fact actually appears in its gold source: if it doesn't, the question is wrong,
+not the pipeline.
 
 ## Tests
 

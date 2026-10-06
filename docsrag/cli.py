@@ -138,8 +138,11 @@ def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
     from docsrag import evals
     import json
 
+    qs = evals.load_questions()
+    n_local = sum(q.source_type != "fastapi" for q in qs)
+    typer.echo(f"{len(qs)} questions ({len(qs) - n_local} FastAPI, {n_local} from {evals.LOCAL_QUESTIONS})", err=True)
     with db.connect() as conn:
-        path = evals.run(conn, config.get(config_name), evals.load_questions())
+        path = evals.run(conn, config.get(config_name), qs)
     typer.echo(f"{path}\n{json.dumps(json.loads(path.read_text())['metrics'], indent=2)}")
 
 
