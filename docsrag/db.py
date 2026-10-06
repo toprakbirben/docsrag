@@ -47,6 +47,22 @@ CREATE TABLE IF NOT EXISTS sync_state (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS conversations (  -- web chat sidebar
+    id         BIGSERIAL PRIMARY KEY,
+    title      TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id              BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role            TEXT NOT NULL,         -- 'user' | 'assistant'
+    content         TEXT NOT NULL,
+    payload         JSONB NOT NULL DEFAULT '{}',  -- route, sources, commits, notes, error
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS eval_runs (
     id         TEXT PRIMARY KEY,
     config     JSONB NOT NULL,

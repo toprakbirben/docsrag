@@ -124,6 +124,14 @@ def why(project: str, topic: str, config_name: str = typer.Option("baseline", "-
     _print_report(rep)
 
 
+@app.command()
+def serve(port: int = typer.Option(8000, "--port")) -> None:
+    """Run the local web chat on http://127.0.0.1:PORT."""
+    import uvicorn
+
+    uvicorn.run("docsrag.web:app", host="127.0.0.1", port=port)
+
+
 @eval_app.command("run")
 def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
     """Run all eval questions through a pipeline config and record metrics."""
