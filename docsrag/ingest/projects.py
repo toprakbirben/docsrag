@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import subprocess
@@ -7,10 +8,10 @@ from collections import Counter
 from fnmatch import fnmatch
 from pathlib import Path
 
-ROOT = Path(os.environ.get("STUFFRAG_PROJECTS", Path.home() / "projects"))
+ROOT = Path(os.environ.get("DOCSRAG_PROJECTS", Path.home() / "projects"))
 # Third-party clones and backups: they'd crowd my own projects out of retrieval.
-# stuffrag indexes itself: its eval answer key must never be retrievable.
-SKIP_FILES = {"stuffrag/evals/questions.yaml"}
+# docsrag indexes itself: its eval answer key must never be retrievable.
+SKIP_FILES = {"docsrag/evals/questions.yaml"}
 SKIP_PROJECTS = {"agency-agents", "career-ops", "LLaVA", "llama-vision-boilerplate", "morethantasks backup"}
 
 EXTS = {".md", ".txt", ".rst", ".py", ".ipynb", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cs", ".gd", ".go",
@@ -38,12 +39,39 @@ SECRET_TEXT = re.compile("|".join([
     r"(?![\"'$\{<\d]|(?:None|null|true|false)\b)[A-Za-z0-9_+/=!@%^&*~-]{4,}(?=[\s,;]|$)",
     r"\$\{[A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY)[A-Z0-9_]*:?-[^}]+\}",  # ${PASS:-default}
     r"[a-z][a-z0-9+.-]*://[^/\s:@$]+:[^/\s@$]+@",  # user:password@ in a URL
+    r"\b[rs]k_live_[A-Za-z0-9]{16,}",  # Stripe
+    r"\bhf_[A-Za-z0-9]{30,}",  # Hugging Face
+    r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}",  # JWT
+    r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}",  # SendGrid
+    r"\bnpm_[A-Za-z0-9]{36}",
+    r"\bpypi-AgE[A-Za-z0-9_-]{50,}",
+    r"\bSK[0-9a-fA-F]{32}\b",  # Twilio
 ]))
+# Unknown providers: a random-looking literal gives a key away even when its format is new.
+NAMED_LITERAL = re.compile(
+    r"(?i:key|token|secret|auth|credential|passw|bearer)[A-Za-z0-9_]*[\"']?\s*[:=]\s*[\"']([^\"'\s]{16,})[\"']")
+LONG_LITERAL = re.compile(r"[\"'`]([A-Za-z0-9+/_=-]{32,})[\"'`]")
+NAMED_ENTROPY = 3.5  # bits/char; a 16+ char random token sits around 3.7-4.0
+LONG_ENTROPY = 4.3   # hex (SHAs, UUIDs) tops out at 4.0; random base62/64 is ~4.7+
+
+
+def _entropy(s: str) -> float:
+    return -sum(n / len(s) * math.log2(n / len(s)) for n in Counter(s).values())
+
+
+def _random_like(s: str, threshold: float, mixed_case: bool = False) -> bool:
+    if not (any(c.isdigit() for c in s) and any(c.isalpha() for c in s)):
+        return False
+    if mixed_case and not (any(c.isupper() for c in s) and any(c.islower() for c in s)):
+        return False
+    return _entropy(s) >= threshold
 
 
 def is_secret(path: str, text: str) -> bool:
     name = Path(path).name.lower()
-    return any(fnmatch(name, p) for p in SECRET_NAMES) or bool(SECRET_TEXT.search(text))
+    return (any(fnmatch(name, p) for p in SECRET_NAMES) or bool(SECRET_TEXT.search(text))
+            or any(_random_like(v, NAMED_ENTROPY) for v in NAMED_LITERAL.findall(text))
+            or any(_random_like(v, LONG_ENTROPY, mixed_case=True) for v in LONG_LITERAL.findall(text)))
 
 
 def notebook_text(raw: str) -> str:

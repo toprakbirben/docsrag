@@ -10,11 +10,11 @@ import psycopg
 import yaml
 from psycopg.types.json import Jsonb
 
-from stuffrag import rerank as rerank_mod
-from stuffrag.config import PipelineConfig
-from stuffrag.embed import index
-from stuffrag.generate import chat, generate
-from stuffrag.retrieve import Hit, retrieve
+from docsrag import rerank as rerank_mod
+from docsrag.config import PipelineConfig
+from docsrag.embed import index
+from docsrag.generate import chat, generate
+from docsrag.retrieve import Hit, retrieve
 
 QUESTIONS = Path("evals/questions.yaml")
 RUNS = Path("evals/runs")

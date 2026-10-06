@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from stuffrag.ingest.projects import collect, is_secret, notebook_text
+from docsrag.ingest.projects import collect, is_secret, notebook_text
 
 AWS = "AKIA" + "ABCDEFGHIJKLMNOP"  # split so this test file itself doesn't look like a leak
 PEM = "-----BEGIN RSA " + "PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----"
@@ -105,20 +105,20 @@ def test_notebook_keeps_cell_sources_and_drops_outputs():
                                  "resources/views/home.blade.php", "resources/js/App.vue", ".cursor/rules/x.mdc"])
 def test_laravel_and_vue_sources_are_indexed(rel):
     # collabdocs and habbo-agency-portal are Laravel/Vue apps: without these their code is invisible.
-    from stuffrag.ingest.projects import _allowed
+    from docsrag.ingest.projects import _allowed
     assert _allowed(rel)
 
 
 def test_vendored_dependencies_are_not_indexed():
     # Composer's vendor/ is third-party code that would drown out the app's own files.
-    from stuffrag.ingest.projects import _allowed
+    from docsrag.ingest.projects import _allowed
     assert not _allowed("vendor/laravel/framework/src/Auth.php")
 
 
 @pytest.mark.parametrize("rel", ["docs/superpowers/plans/plan.md", "lib/glfw-3.4.bin.MACOS/docs/html/index.html"])
 def test_docs_folders_are_hidden(rel):
     # Toprak's choice: docs/ (specs/plans, vendored library docs) stays out of the index.
-    from stuffrag.ingest.projects import _allowed
+    from docsrag.ingest.projects import _allowed
     assert not _allowed(rel)
 
 
@@ -147,9 +147,51 @@ def test_credential_references_are_not_secrets(text):
 
 
 def test_eval_answer_key_is_never_indexed(tmp_path):
-    # stuffrag indexes itself; its questions.yaml would hand retrieval the gold answers.
-    (tmp_path / "stuffrag/evals").mkdir(parents=True)
-    (tmp_path / "stuffrag/evals/questions.yaml").write_text("- id: x\n")
-    (tmp_path / "stuffrag/main.py").write_text("print(1)\n")
+    # docsrag indexes itself; its questions.yaml would hand retrieval the gold answers.
+    (tmp_path / "docsrag/evals").mkdir(parents=True)
+    (tmp_path / "docsrag/evals/questions.yaml").write_text("- id: x\n")
+    (tmp_path / "docsrag/main.py").write_text("print(1)\n")
     docs, _ = collect(tmp_path, skip=set())
-    assert "projects:stuffrag/evals/questions.yaml" not in {d["id"] for d in docs}
+    assert "projects:docsrag/evals/questions.yaml" not in {d["id"] for d in docs}
+
+
+# Built by concatenation so these fixtures don't read as real keys in this file.
+KNOWN_FORMATS = {
+    "stripe": "STRIPE = '" + "sk_" + "live_" + "a1B2c3D4" * 3 + "'",
+    "huggingface": "HF = '" + "hf_" + "aB3dE5fG7h" * 3 + "xyzw'",
+    "openai project": "K = '" + "sk-" + "proj-" + "Ab1Cd2Ef3G" * 4 + "'",
+    "jwt": "bearer = '" + "eyJhbGciOiJIUzI1NiJ9" + ".eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'",
+    "sendgrid": "SG_ = '" + "SG." + "aB3dE5fG7hJ9kL1mN3pQ5r" + "." + "sT7uV9wX1yZ3aB5cD7eF9gH1iJ3kL5mN7oP9qR1sT3u'",
+    "npm": "//registry.npmjs.org/:_authToken=" + "npm_" + "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5",
+    "pypi": "password = " + "pypi-" + "AgEIcHlwaS5vcmcCJGFiY2RlZjEyLTM0NTYtNzg5MC1hYmNkLWVmMTIzNDU2Nzg5MAAC",
+    "twilio": "TWILIO = '" + "SK" + "0123456789abcdef" * 2 + "'",
+}
+
+
+@pytest.mark.parametrize("name", KNOWN_FORMATS)
+def test_more_provider_key_formats_are_rejected(name):
+    assert is_secret("app/settings.py", KNOWN_FORMATS[name])
+
+
+@pytest.mark.parametrize("text", [
+    'GEMINI_KEY = "Xq7mP2vL9nR4tK8wZ3bY"',                       # unknown provider, telling name
+    '{"auth": "q8ZtP3mXr7Lk2Vn9BtR4"}',                          # JSON config
+    'client = Client("Zx81QmP0aLk2Vn9BtR7cWs4YhG6dJe3F")',       # no telling name at all
+])
+def test_unknown_format_keys_are_caught_by_randomness(text):
+    # Future projects will use providers we have no pattern for; random-looking literals give them away.
+    assert is_secret("src/client.py", text)
+
+
+@pytest.mark.parametrize("text", [
+    "commit = '9948e17345e530ac28b1d883efa265916b9de790'",       # git SHA (hex only)
+    "id = '123e4567-e89b-12d3-a456-426614174000'",               # UUID
+    'msg = "This sentence is long but it is ordinary English text."',
+    'path = "frontend/src/features/tactics/TacticsPage.tsx"',
+    "token_refresh_interval_seconds = 3600",
+    'API_KEY_HEADER = "X-Api-Key-Header-Name"',                 # telling name, but not random
+    'className="flex items-center justify-between rounded-lg px-4"',
+])
+def test_ordinary_long_strings_are_not_flagged(text):
+    # Over-blocking hides normal code; these are the shapes that dominate real projects.
+    assert not is_secret("src/app.py", text)

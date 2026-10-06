@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from stuffrag.ingest.fastapi_repo import collect, expand_includes
+from docsrag.ingest.fastapi_repo import collect, expand_includes
 
 
 def make_repo(tmp_path: Path) -> Path:

@@ -1,20 +1,20 @@
-# stuffrag RAG Core (FastAPI corpus + evals) Implementation Plan
+# docsrag RAG Core (FastAPI corpus + evals) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ingest the pinned FastAPI docs + source, answer questions with cited chunks, and measure the pipeline with an eval harness: a recorded baseline run, then hybrid and rerank runs compared against it (spec build steps 2–5).
 
-**Architecture:** One frozen `PipelineConfig` controls chunking, embedder, hybrid, rerank and top-k. `stuff sync fastapi` clones the pinned tag into `~/.stuffrag/fastapi/<tag>`, upserts `documents`, then `index()` chunks them into `chunks` (tagged with a chunker name so ablations coexist) and embeds into one table per embedder (`emb_bge_m3`, `emb_nomic_embed_text`). `ask()` = retrieve (dense, optionally ∪ full-text via RRF, optionally cross-encoder rerank) → qwen3 generation with `[c<id>]` citations. `stuff eval run` runs every question through the same `ask` path and writes a JSON run file + an `eval_runs` row.
+**Architecture:** One frozen `PipelineConfig` controls chunking, embedder, hybrid, rerank and top-k. `docsrag sync fastapi` clones the pinned tag into `~/.docsrag/fastapi/<tag>`, upserts `documents`, then `index()` chunks them into `chunks` (tagged with a chunker name so ablations coexist) and embeds into one table per embedder (`emb_bge_m3`, `emb_nomic_embed_text`). `ask()` = retrieve (dense, optionally ∪ full-text via RRF, optionally cross-encoder rerank) → qwen3 generation with `[c<id>]` citations. `docsrag eval run` runs every question through the same `ask` path and writes a JSON run file + an `eval_runs` row.
 
 **Tech Stack:** Python 3.12, uv, Typer, psycopg 3, Postgres 16 + pgvector (existing docker-compose, port 5433), Ollama HTTP API via httpx (`bge-m3`, `nomic-embed-text`, `qwen3:8b`), sentence-transformers CrossEncoder `BAAI/bge-reranker-v2-m3` on MPS, PyYAML, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-23-stuffrag-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-23-docsrag-design.md`
 
 **Out of scope (later plans):** Gmail (spec steps 6–7, incl. email chunker and the 15 email/cross-source questions), jobs (step 8, incl. `config.toml`), web chat + launchd (step 9).
 
 ## Global Constraints
 
-- Python `>=3.12`, deps managed with `uv` (`uv add`, `uv run`). Existing DSN: `postgresql://stuff:stuff@localhost:5433/stuffrag` (env `STUFFRAG_DSN`).
+- Python `>=3.12`, deps managed with `uv` (`uv add`, `uv run`). Existing DSN: `postgresql://docsrag:docsrag@localhost:5433/docsrag` (env `DOCSRAG_DSN`).
 - Embedders: `bge-m3` (default, 1024-dim) and `nomic-embed-text` (768-dim) via Ollama. Reranker: `BAAI/bge-reranker-v2-m3`. LLM: `qwen3:8b` via Ollama.
 - FastAPI corpus is pinned to one release tag (`0.115.12`): docs `docs/en/docs/**/*.md` + `fastapi/**/*.py`. (The spec says `docs/en/**/*.md`, but the Markdown is actually under `docs/en/docs/`.)
 - Answers cite chunk ids and refuse with "not found" when the context doesn't support an answer.
@@ -24,7 +24,7 @@
 
 ## Deliberate deviations from the spec (flagged, not silent)
 
-- Eval harness lives in `stuffrag/evals.py` (importable by the `stuff` CLI), not `evals/run.py`. `evals/questions.yaml` and `evals/runs/` stay where the spec puts them.
+- Eval harness lives in `docsrag/evals.py` (importable by the `docsrag` CLI), not `evals/run.py`. `evals/questions.yaml` and `evals/runs/` stay where the spec puts them.
 - "BM25" is Postgres full-text `ts_rank_cd` over the existing `tsv` column. It isn't true BM25, and run files label it `hybrid`.
 - "Tokens" for chunk sizes = whitespace-separated words (≈0.75 of a model token). That's good enough to compare 256/512/1024 against each other.
 - No ANN index. The corpus is a few thousand chunks, so an exact cosine scan takes milliseconds and avoids HNSW's post-filter-on-`chunker` recall loss.
@@ -35,14 +35,14 @@
 2. **Retrieved context larger than Ollama's default context window (4096).** Ollama silently truncates the prompt, so the model never sees the later passages. Every chat call must set `num_ctx`. → Task 4 test.
 3. **Model cites an id not in context, or writes `[c12, c14]`.** Only real context ids are kept, and both forms are parsed. → Task 4 test.
 4. **Question with no lexical overlap / only stopwords** ("what is it?"). Full-text returns nothing, and fusion must still return the dense results rather than crashing or returning empty. → Task 7 test.
-5. **Re-running `stuff sync fastapi`, or bumping the pinned tag.** No duplicate chunks; only changed documents get re-chunked and re-embedded. → Task 2 test (`diff_documents`) + Task 3 double-run verification.
+5. **Re-running `docsrag sync fastapi`, or bumping the pinned tag.** No duplicate chunks; only changed documents get re-chunked and re-embedded. → Task 2 test (`diff_documents`) + Task 3 double-run verification.
 
 ---
 
 ### Task 1: Pipeline config + Markdown/Python chunkers
 
 **Files:**
-- Create: `stuffrag/config.py`, `stuffrag/chunk.py`
+- Create: `docsrag/config.py`, `docsrag/chunk.py`
 - Test: `tests/test_chunk.py`
 
 **Interfaces:**
@@ -57,8 +57,8 @@
 ```python
 import pytest
 
-from stuffrag import config
-from stuffrag.chunk import chunk, chunk_markdown, chunk_python, window
+from docsrag import config
+from docsrag.chunk import chunk, chunk_markdown, chunk_python, window
 
 
 def body_tokens(c: str) -> int:
@@ -137,16 +137,16 @@ def test_presets_differ_only_in_what_their_name_says():
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_chunk.py -v`
-Expected: collection error `ModuleNotFoundError: No module named 'stuffrag.config'`
+Expected: collection error `ModuleNotFoundError: No module named 'docsrag.config'`
 
 - [ ] **Step 3: Implement**
 
-`stuffrag/config.py`:
+`docsrag/config.py`:
 ```python
 import os
 from dataclasses import asdict, dataclass
 
-OLLAMA_URL = os.environ.get("STUFFRAG_OLLAMA", "http://localhost:11434")
+OLLAMA_URL = os.environ.get("DOCSRAG_OLLAMA", "http://localhost:11434")
 
 # Embedding dimension per Ollama model; one vector table per embedder.
 EMBEDDERS = {"bge-m3": 1024, "nomic-embed-text": 768}
@@ -189,7 +189,7 @@ def get(name: str) -> PipelineConfig:
         raise ValueError(f"unknown config {name!r}; choose from {', '.join(PRESETS)}") from None
 ```
 
-`stuffrag/chunk.py`:
+`docsrag/chunk.py`:
 ```python
 import ast
 import re
@@ -276,17 +276,17 @@ Expected: 11 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add stuffrag/config.py stuffrag/chunk.py tests/test_chunk.py
+git add docsrag/config.py docsrag/chunk.py tests/test_chunk.py
 git commit -m "Add PipelineConfig presets and Markdown/Python chunkers"
 ```
 
 ---
 
-### Task 2: FastAPI ingest (`stuff sync fastapi`, ingest half)
+### Task 2: FastAPI ingest (`docsrag sync fastapi`, ingest half)
 
 **Files:**
-- Create: `stuffrag/ingest/fastapi_repo.py`, `tests/test_fastapi_repo.py`, `tests/test_db.py`
-- Modify: `stuffrag/db.py` (append `diff_documents`, `upsert_documents`), `stuffrag/cli.py` (add `sync` command)
+- Create: `docsrag/ingest/fastapi_repo.py`, `tests/test_fastapi_repo.py`, `tests/test_db.py`
+- Modify: `docsrag/db.py` (append `diff_documents`, `upsert_documents`), `docsrag/cli.py` (add `sync` command)
 
 **Interfaces:**
 - Consumes: `db.connect()`
@@ -300,9 +300,9 @@ git commit -m "Add PipelineConfig presets and Markdown/Python chunkers"
 - [ ] **Step 1: Check the include syntax in the real checkout**
 
 ```bash
-git clone --depth 1 --branch 0.115.12 https://github.com/fastapi/fastapi.git ~/.stuffrag/fastapi/0.115.12
-grep -rhoE '\{(\*|!)[^}]*\}' ~/.stuffrag/fastapi/0.115.12/docs/en/docs | head -5
-ls ~/.stuffrag/fastapi/0.115.12/docs_src | head -3
+git clone --depth 1 --branch 0.115.12 https://github.com/fastapi/fastapi.git ~/.docsrag/fastapi/0.115.12
+grep -rhoE '\{(\*|!)[^}]*\}' ~/.docsrag/fastapi/0.115.12/docs/en/docs | head -5
+ls ~/.docsrag/fastapi/0.115.12/docs_src | head -3
 ```
 Expected: lines like `{* ../../docs_src/dependencies/tutorial008_an_py39.py hl[...] *}`, and `docs_src/` at the repo root, so paths resolve relative to `docs/en/`. If the syntax differs, adjust the `INCLUDE` regex below and the test fixtures to match it before continuing.
 
@@ -312,7 +312,7 @@ Expected: lines like `{* ../../docs_src/dependencies/tutorial008_an_py39.py hl[.
 ```python
 from pathlib import Path
 
-from stuffrag.ingest.fastapi_repo import collect, expand_includes
+from docsrag.ingest.fastapi_repo import collect, expand_includes
 
 
 def make_repo(tmp_path: Path) -> Path:
@@ -356,7 +356,7 @@ def test_collect_yields_docs_and_code_with_stable_ids(tmp_path):
 
 `tests/test_db.py`:
 ```python
-from stuffrag.db import diff_documents
+from docsrag.db import diff_documents
 
 
 def test_diff_documents_only_flags_real_changes():
@@ -369,11 +369,11 @@ def test_diff_documents_only_flags_real_changes():
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_fastapi_repo.py tests/test_db.py -v`
-Expected: FAIL, `ModuleNotFoundError: No module named 'stuffrag.ingest.fastapi_repo'` / `ImportError: cannot import name 'diff_documents'`
+Expected: FAIL, `ModuleNotFoundError: No module named 'docsrag.ingest.fastapi_repo'` / `ImportError: cannot import name 'diff_documents'`
 
 - [ ] **Step 4: Implement**
 
-`stuffrag/ingest/fastapi_repo.py`:
+`docsrag/ingest/fastapi_repo.py`:
 ```python
 import re
 import subprocess
@@ -381,7 +381,7 @@ from pathlib import Path
 
 FASTAPI_TAG = "0.115.12"
 REPO_URL = "https://github.com/fastapi/fastapi.git"
-CHECKOUT_ROOT = Path.home() / ".stuffrag" / "fastapi"
+CHECKOUT_ROOT = Path.home() / ".docsrag" / "fastapi"
 # mkdocs include forms used by FastAPI docs; paths are relative to docs/en/.
 INCLUDE = re.compile(r"\{\*\s*(\S+)[^}]*?\*\}|\{!\s*(\S+?)\s*!\}")
 
@@ -443,7 +443,7 @@ def _doc(rel: str, title: str, body: str, tag: str, kind: str) -> dict:
     }
 ```
 
-Append to `stuffrag/db.py` (add `from psycopg.types.json import Jsonb` to the imports):
+Append to `docsrag/db.py` (add `from psycopg.types.json import Jsonb` to the imports):
 ```python
 def diff_documents(existing: dict[str, str], docs: list[dict]) -> tuple[list[str], list[str]]:
     new = [d["id"] for d in docs if d["id"] not in existing]
@@ -470,14 +470,14 @@ def upsert_documents(conn: psycopg.Connection, docs: list[dict]) -> tuple[int, i
     return len(new), len(changed)
 ```
 
-Add to `stuffrag/cli.py` (Task 3 extends this command to also index):
+Add to `docsrag/cli.py` (Task 3 extends this command to also index):
 ```python
 @app.command()
 def sync(source: str) -> None:
     """Ingest a source into the documents table. Sources: fastapi."""
     if source != "fastapi":
         raise typer.BadParameter(f"unknown source {source!r}; available: fastapi")
-    from stuffrag.ingest import fastapi_repo
+    from docsrag.ingest import fastapi_repo
 
     repo = fastapi_repo.checkout()
     docs, missing = fastapi_repo.collect(repo, fastapi_repo.FASTAPI_TAG)
@@ -492,23 +492,23 @@ def sync(source: str) -> None:
 - [ ] **Step 5: Run tests, then the real ingest twice**
 
 Run: `uv run pytest -v` → all pass.
-Run: `uv run stuff sync fastapi` → `fastapi 0.115.12: N docs (N new, 0 changed), U unresolved includes`, with N in the hundreds. If U is more than a handful, look at the warnings and fix the regex/base before moving on.
+Run: `uv run docsrag sync fastapi` → `fastapi 0.115.12: N docs (N new, 0 changed), U unresolved includes`, with N in the hundreds. If U is more than a handful, look at the warnings and fix the regex/base before moving on.
 Run it again → `(0 new, 0 changed)`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add stuffrag/ingest/fastapi_repo.py stuffrag/db.py stuffrag/cli.py tests/test_fastapi_repo.py tests/test_db.py
+git add docsrag/ingest/fastapi_repo.py docsrag/db.py docsrag/cli.py tests/test_fastapi_repo.py tests/test_db.py
 git commit -m "Ingest pinned FastAPI docs and source with include expansion"
 ```
 
 ---
 
-### Task 3: Embedding + indexing (`stuff index`, `stuff sync` indexes)
+### Task 3: Embedding + indexing (`docsrag index`, `docsrag sync` indexes)
 
 **Files:**
-- Create: `stuffrag/embed.py`
-- Modify: `stuffrag/cli.py`, `pyproject.toml` (via `uv add httpx`)
+- Create: `docsrag/embed.py`
+- Modify: `docsrag/cli.py`, `pyproject.toml` (via `uv add httpx`)
 - Test: `tests/test_embed.py`
 
 **Interfaces:**
@@ -531,7 +531,7 @@ ollama --version             # need >= 0.9 for the `think` flag used in Task 4
 
 `tests/test_embed.py`:
 ```python
-from stuffrag import embed
+from docsrag import embed
 
 
 def test_table_name_is_a_safe_identifier():
@@ -565,7 +565,7 @@ Expected: FAIL, `ImportError: cannot import name 'embed'`
 
 - [ ] **Step 4: Implement**
 
-`stuffrag/embed.py`:
+`docsrag/embed.py`:
 ```python
 import re
 from collections.abc import Callable
@@ -573,8 +573,8 @@ from collections.abc import Callable
 import httpx
 import psycopg
 
-from stuffrag.chunk import chunk
-from stuffrag.config import EMBEDDERS, OLLAMA_URL, PipelineConfig
+from docsrag.chunk import chunk
+from docsrag.config import EMBEDDERS, OLLAMA_URL, PipelineConfig
 
 # (document prefix, query prefix) for models trained with task prefixes.
 PREFIX = {"nomic-embed-text": ("search_document: ", "search_query: ")}
@@ -652,10 +652,10 @@ def index(
     return {"chunked_docs": len(docs), "chunks": len(rows), "embedded": len(todo)}
 ```
 
-In `stuffrag/cli.py`, add `from stuffrag import config` and replace the last line of `sync` (the summary `typer.echo`) with the same echo followed by an index call. Then add an `index` command:
+In `docsrag/cli.py`, add `from docsrag import config` and replace the last line of `sync` (the summary `typer.echo`) with the same echo followed by an index call. Then add an `index` command:
 ```python
 def _index(cfg_name: str) -> None:
-    from stuffrag import embed
+    from docsrag import embed
 
     cfg = config.get(cfg_name)
     with db.connect() as conn:
@@ -674,24 +674,24 @@ At the end of `sync`, add `_index("baseline")`.
 - [ ] **Step 5: Run tests, then index twice**
 
 Run: `uv run pytest -v` → all pass.
-Run: `uv run stuff sync fastapi` → the index line reports non-zero chunks and embedded counts (expect a few thousand chunks; this takes minutes).
-Run: `uv run stuff index --config baseline` → `0 docs chunked, 0 chunks added, 0 embedded`.
-Run: `docker compose exec db psql -U stuff stuffrag -c "SELECT chunker, count(*) FROM chunks GROUP BY 1; SELECT count(*) FROM emb_bge_m3;"` → the two counts are equal.
+Run: `uv run docsrag sync fastapi` → the index line reports non-zero chunks and embedded counts (expect a few thousand chunks; this takes minutes).
+Run: `uv run docsrag index --config baseline` → `0 docs chunked, 0 chunks added, 0 embedded`.
+Run: `docker compose exec db psql -U docsrag docsrag -c "SELECT chunker, count(*) FROM chunks GROUP BY 1; SELECT count(*) FROM emb_bge_m3;"` → the two counts are equal.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add stuffrag/embed.py stuffrag/cli.py tests/test_embed.py pyproject.toml uv.lock
+git add docsrag/embed.py docsrag/cli.py tests/test_embed.py pyproject.toml uv.lock
 git commit -m "Chunk and embed documents per pipeline config via Ollama"
 ```
 
 ---
 
-### Task 4: Dense retrieval + cited generation (`stuff ask`)
+### Task 4: Dense retrieval + cited generation (`docsrag ask`)
 
 **Files:**
-- Create: `stuffrag/retrieve.py`, `stuffrag/generate.py`
-- Modify: `stuffrag/cli.py`
+- Create: `docsrag/retrieve.py`, `docsrag/generate.py`
+- Modify: `docsrag/cli.py`
 - Test: `tests/test_generate.py`
 
 **Interfaces:**
@@ -707,9 +707,9 @@ git commit -m "Chunk and embed documents per pipeline config via Ollama"
 
 `tests/test_generate.py`:
 ```python
-from stuffrag import generate
-from stuffrag.config import PipelineConfig
-from stuffrag.retrieve import Hit
+from docsrag import generate
+from docsrag.config import PipelineConfig
+from docsrag.retrieve import Hit
 
 HITS = [Hit(12, "fastapi:a.md", "yield deps", 0.9), Hit(14, "fastapi:b.md", "cleanup", 0.8)]
 
@@ -750,18 +750,18 @@ def test_chat_sets_context_window_so_passages_are_not_silently_truncated(monkeyp
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_generate.py -v`
-Expected: FAIL, `ModuleNotFoundError: No module named 'stuffrag.generate'`
+Expected: FAIL, `ModuleNotFoundError: No module named 'docsrag.generate'`
 
 - [ ] **Step 3: Implement**
 
-`stuffrag/retrieve.py`:
+`docsrag/retrieve.py`:
 ```python
 from dataclasses import dataclass
 
 import psycopg
 
-from stuffrag.config import PipelineConfig
-from stuffrag.embed import embed, table, to_pgvector
+from docsrag.config import PipelineConfig
+from docsrag.embed import embed, table, to_pgvector
 
 
 @dataclass(frozen=True)
@@ -788,7 +788,7 @@ def retrieve(conn: psycopg.Connection, query: str, cfg: PipelineConfig) -> list[
     return dense(conn, query, cfg, cfg.top_k)
 ```
 
-`stuffrag/generate.py`:
+`docsrag/generate.py`:
 ```python
 import re
 from dataclasses import dataclass
@@ -796,8 +796,8 @@ from dataclasses import dataclass
 import httpx
 import psycopg
 
-from stuffrag.config import OLLAMA_URL, PipelineConfig
-from stuffrag.retrieve import Hit, retrieve
+from docsrag.config import OLLAMA_URL, PipelineConfig
+from docsrag.retrieve import Hit, retrieve
 
 REFUSAL = "Not found in my sources."
 NUM_CTX = 16384  # Ollama's default window would silently truncate top_k passages
@@ -854,12 +854,12 @@ def ask(conn: psycopg.Connection, question: str, cfg: PipelineConfig) -> Answer:
     return generate(question, retrieve(conn, question, cfg), cfg)
 ```
 
-Add to `stuffrag/cli.py`:
+Add to `docsrag/cli.py`:
 ```python
 @app.command()
 def ask(question: str, config_name: str = typer.Option("baseline", "--config")) -> None:
     """Answer a question from indexed sources, with citations."""
-    from stuffrag import generate
+    from docsrag import generate
 
     with db.connect() as conn:
         answer = generate.ask(conn, question, config.get(config_name))
@@ -874,23 +874,23 @@ def ask(question: str, config_name: str = typer.Option("baseline", "--config")) 
 - [ ] **Step 4: Run tests, then a real question**
 
 Run: `uv run pytest -v` → all pass.
-Run: `uv run stuff ask "How do I declare a dependency with yield in FastAPI?"`
-Expected: an answer describing a dependency function that `yield`s a value, with the code after `yield` running after the response. It has at least one `[cN]` citation, and a Sources list that includes `fastapi:docs/en/docs/tutorial/dependencies/dependencies-with-yield.md`. Also run `uv run stuff ask "What is the capital of Peru?"` → `Not found in my sources.`
+Run: `uv run docsrag ask "How do I declare a dependency with yield in FastAPI?"`
+Expected: an answer describing a dependency function that `yield`s a value, with the code after `yield` running after the response. It has at least one `[cN]` citation, and a Sources list that includes `fastapi:docs/en/docs/tutorial/dependencies/dependencies-with-yield.md`. Also run `uv run docsrag ask "What is the capital of Peru?"` → `Not found in my sources.`
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add stuffrag/retrieve.py stuffrag/generate.py stuffrag/cli.py tests/test_generate.py
-git commit -m "Add dense retrieval and cited generation (stuff ask)"
+git add docsrag/retrieve.py docsrag/generate.py docsrag/cli.py tests/test_generate.py
+git commit -m "Add dense retrieval and cited generation (docsrag ask)"
 ```
 
 ---
 
-### Task 5: Eval harness (`stuff eval run`, `stuff eval compare`)
+### Task 5: Eval harness (`docsrag eval run`, `docsrag eval compare`)
 
 **Files:**
-- Create: `stuffrag/evals.py`
-- Modify: `stuffrag/cli.py`, `pyproject.toml` (via `uv add pyyaml`)
+- Create: `docsrag/evals.py`
+- Modify: `docsrag/cli.py`, `pyproject.toml` (via `uv add pyyaml`)
 - Test: `tests/test_evals.py`
 
 **Interfaces:**
@@ -905,8 +905,8 @@ git commit -m "Add dense retrieval and cited generation (stuff ask)"
 
 `tests/test_evals.py`:
 ```python
-from stuffrag import evals
-from stuffrag.retrieve import Hit
+from docsrag import evals
+from docsrag.retrieve import Hit
 
 
 def h(cid, doc):
@@ -973,7 +973,7 @@ Expected: FAIL, `ImportError: cannot import name 'evals'`
 
 - [ ] **Step 3: Implement**
 
-`stuffrag/evals.py`:
+`docsrag/evals.py`:
 ```python
 import json
 import math
@@ -987,10 +987,10 @@ import psycopg
 import yaml
 from psycopg.types.json import Jsonb
 
-from stuffrag.config import PipelineConfig
-from stuffrag.embed import index
-from stuffrag.generate import chat, generate
-from stuffrag.retrieve import Hit, retrieve
+from docsrag.config import PipelineConfig
+from docsrag.embed import index
+from docsrag.generate import chat, generate
+from docsrag.retrieve import Hit, retrieve
 
 QUESTIONS = Path("evals/questions.yaml")
 RUNS = Path("evals/runs")
@@ -1115,7 +1115,7 @@ def compare(a: dict, b: dict) -> list[str]:
     return lines
 ```
 
-Add to `stuffrag/cli.py`:
+Add to `docsrag/cli.py`:
 ```python
 eval_app = typer.Typer()
 app.add_typer(eval_app, name="eval")
@@ -1124,7 +1124,7 @@ app.add_typer(eval_app, name="eval")
 @eval_app.command("run")
 def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
     """Run all eval questions through a pipeline config and record metrics."""
-    from stuffrag import evals
+    from docsrag import evals
 
     with db.connect() as conn:
         path = evals.run(conn, config.get(config_name), evals.load_questions())
@@ -1136,7 +1136,7 @@ def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
 def eval_compare(run_a: Path, run_b: Path) -> None:
     """Print metric deltas between two run files (B - A)."""
     import json
-    from stuffrag import evals
+    from docsrag import evals
 
     for line in evals.compare(json.loads(run_a.read_text()), json.loads(run_b.read_text())):
         typer.echo(line)
@@ -1151,7 +1151,7 @@ Expected: all pass. The exact column spacing in `test_compare_prints_deltas` has
 - [ ] **Step 5: Commit**
 
 ```bash
-git add stuffrag/evals.py stuffrag/cli.py tests/test_evals.py pyproject.toml uv.lock
+git add docsrag/evals.py docsrag/cli.py tests/test_evals.py pyproject.toml uv.lock
 git commit -m "Add eval harness: retrieval, answer, refusal and latency metrics"
 ```
 
@@ -1171,8 +1171,8 @@ git commit -m "Add eval harness: retrieval, answer, refusal and latency metrics"
 ```python
 import pytest
 
-from stuffrag.evals import QUESTIONS, load_questions
-from stuffrag.ingest.fastapi_repo import CHECKOUT_ROOT, FASTAPI_TAG, expand_includes
+from docsrag.evals import QUESTIONS, load_questions
+from docsrag.ingest.fastapi_repo import CHECKOUT_ROOT, FASTAPI_TAG, expand_includes
 
 REPO = CHECKOUT_ROOT / FASTAPI_TAG
 QS = load_questions(QUESTIONS)
@@ -1183,7 +1183,7 @@ def test_ids_unique_and_fastapi_count():
     assert sum(q.source_type == "fastapi" for q in QS) == 25
 
 
-@pytest.mark.skipif(not REPO.exists(), reason=f"run `stuff sync fastapi` first ({REPO} missing)")
+@pytest.mark.skipif(not REPO.exists(), reason=f"run `docsrag sync fastapi` first ({REPO} missing)")
 @pytest.mark.parametrize("q", [q for q in QS if q.source_type == "fastapi"], ids=lambda q: q.id)
 def test_every_key_fact_is_in_the_gold_sources(q):
     # A key fact missing from its gold file means the question is wrong, not the pipeline.
@@ -1199,7 +1199,7 @@ def test_every_key_fact_is_in_the_gold_sources(q):
 
 - [ ] **Step 2: Draft the 25 questions from the pinned docs**
 
-Read the docs under `~/.stuffrag/fastapi/0.115.12/docs/en/docs/` (tutorial, advanced, and a few `fastapi/*.py` files). Write 25 entries that spread across topics: path/query params, request body, dependencies (incl. yield), security/OAuth2, middleware, CORS, background tasks, lifespan events, testing, `APIRouter`, response models, status codes, exceptions, WebSockets, settings, and 3 or more questions answered by `fastapi/` source code. Each `expected_answer` item is a short verbatim phrase (2–5 words) that must appear in a correct answer and does appear in the gold file. Format:
+Read the docs under `~/.docsrag/fastapi/0.115.12/docs/en/docs/` (tutorial, advanced, and a few `fastapi/*.py` files). Write 25 entries that spread across topics: path/query params, request body, dependencies (incl. yield), security/OAuth2, middleware, CORS, background tasks, lifespan events, testing, `APIRouter`, response models, status codes, exceptions, WebSockets, settings, and 3 or more questions answered by `fastapi/` source code. Each `expected_answer` item is a short verbatim phrase (2–5 words) that must appear in a correct answer and does appear in the gold file. Format:
 
 ```yaml
 - id: fa-01
@@ -1222,8 +1222,8 @@ Expected: 26 passed, 0 skipped. A failure means you fix the question (wrong path
 
 - [ ] **Step 4: Record the baseline**
 
-Run: `uv run stuff eval run --config baseline`
-Expected: prints the `evals/runs/<ts>-baseline.json` path and metrics with `n: 25` and non-null `recall@5`, `mrr@10`, `keyfact`, `answer_correct`, `latency_p50/p95`. Report `judge_errors` if it's non-zero. Also check: `docker compose exec db psql -U stuff stuffrag -c "SELECT id, git_sha FROM eval_runs"` shows the run, with a SHA that doesn't end in `-dirty` (commit first if it does, then re-run).
+Run: `uv run docsrag eval run --config baseline`
+Expected: prints the `evals/runs/<ts>-baseline.json` path and metrics with `n: 25` and non-null `recall@5`, `mrr@10`, `keyfact`, `answer_correct`, `latency_p50/p95`. Report `judge_errors` if it's non-zero. Also check: `docker compose exec db psql -U docsrag docsrag -c "SELECT id, git_sha FROM eval_runs"` shows the run, with a SHA that doesn't end in `-dirty` (commit first if it does, then re-run).
 
 - [ ] **Step 5: Commit**
 
@@ -1238,8 +1238,8 @@ Put the baseline metrics JSON in the commit body. Run files are gitignored, so t
 ### Task 7: Hybrid (full-text + RRF) + reranker, ablation runs, judge spot-check
 
 **Files:**
-- Create: `stuffrag/rerank.py`
-- Modify: `stuffrag/retrieve.py` (add `fulltext`, `rrf`; replace `retrieve`), `pyproject.toml` (via `uv add sentence-transformers`)
+- Create: `docsrag/rerank.py`
+- Modify: `docsrag/retrieve.py` (add `fulltext`, `rrf`; replace `retrieve`), `pyproject.toml` (via `uv add sentence-transformers`)
 - Test: `tests/test_retrieve.py`
 
 **Interfaces:**
@@ -1250,9 +1250,9 @@ Put the baseline metrics JSON in the commit body. Run files are gitignored, so t
 
 `tests/test_retrieve.py`:
 ```python
-from stuffrag import retrieve
-from stuffrag.config import PipelineConfig
-from stuffrag.retrieve import Hit, rrf
+from docsrag import retrieve
+from docsrag.config import PipelineConfig
+from docsrag.retrieve import Hit, rrf
 
 
 def h(cid):
@@ -1291,12 +1291,12 @@ Expected: FAIL, `ImportError: cannot import name 'rrf'`
 
 Run: `uv add sentence-transformers`
 
-`stuffrag/rerank.py`:
+`docsrag/rerank.py`:
 ```python
 from dataclasses import replace
 from functools import cache
 
-from stuffrag.retrieve import Hit
+from docsrag.retrieve import Hit
 
 MODEL = "BAAI/bge-reranker-v2-m3"
 
@@ -1318,7 +1318,7 @@ def rerank(query: str, hits: list[Hit]) -> list[Hit]:
                   key=lambda h: -h.score)
 ```
 
-In `stuffrag/retrieve.py`: add `from dataclasses import dataclass, replace`, then add these two functions and replace `retrieve` (`rerank` is imported inside the function to avoid a circular import; the test monkeypatches the module attribute `retrieve.rerank`, so bind it at module level lazily as shown):
+In `docsrag/retrieve.py`: add `from dataclasses import dataclass, replace`, then add these two functions and replace `retrieve` (`rerank` is imported inside the function to avoid a circular import; the test monkeypatches the module attribute `retrieve.rerank`, so bind it at module level lazily as shown):
 ```python
 def fulltext(conn: psycopg.Connection, query: str, cfg: PipelineConfig, k: int) -> list[Hit]:
     # OR the query lexemes: plainto_tsquery ANDs them, which matches almost nothing for full questions.
@@ -1344,7 +1344,7 @@ def rrf(rankings: list[list[Hit]], k: int = 60) -> list[Hit]:
 
 
 def rerank(query: str, hits: list[Hit]) -> list[Hit]:
-    from stuffrag.rerank import rerank as _rerank  # lazy: loads torch only when rerank is on
+    from docsrag.rerank import rerank as _rerank  # lazy: loads torch only when rerank is on
 
     return _rerank(query, hits)
 
@@ -1363,15 +1363,15 @@ Note for evals: `evaluate` calls `retrieve` with `top_k=10`, so `pool` stays `ca
 - [ ] **Step 4: Run unit tests + a stopword-only live query**
 
 Run: `uv run pytest -v` → all pass, 0 skipped.
-Run: `uv run stuff ask "what is it?" --config hybrid` → no crash (an answer or the refusal string).
+Run: `uv run docsrag ask "what is it?" --config hybrid` → no crash (an answer or the refusal string).
 
 - [ ] **Step 5: Ablation runs + compare**
 
 ```bash
-uv run stuff eval run --config hybrid
-uv run stuff eval run --config hybrid_rerank
-uv run stuff eval compare evals/runs/*-baseline.json evals/runs/*-hybrid.json
-uv run stuff eval compare evals/runs/*-baseline.json evals/runs/*-hybrid_rerank.json
+uv run docsrag eval run --config hybrid
+uv run docsrag eval run --config hybrid_rerank
+uv run docsrag eval compare evals/runs/*-baseline.json evals/runs/*-hybrid.json
+uv run docsrag eval compare evals/runs/*-baseline.json evals/runs/*-hybrid_rerank.json
 ```
 Expected: three run files and two delta tables. Report the deltas as they come out, including regressions. Whether hybrid or rerank helps is the finding, not a pass condition. If more than one baseline file exists, pass the newest explicitly instead of the glob.
 
@@ -1390,7 +1390,7 @@ Show the 10 judgments to Toprak alongside the questions/expected facts. Record h
 - [ ] **Step 7: Commit**
 
 ```bash
-git add stuffrag/rerank.py stuffrag/retrieve.py tests/test_retrieve.py pyproject.toml uv.lock
+git add docsrag/rerank.py docsrag/retrieve.py tests/test_retrieve.py pyproject.toml uv.lock
 git commit -m "Add full-text+RRF hybrid and cross-encoder rerank; record ablation deltas"
 ```
 Put both compare tables and the judge agreement in the commit body.

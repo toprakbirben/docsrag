@@ -1,7 +1,7 @@
 import pytest
 
-from stuffrag.evals import QUESTIONS, load_questions
-from stuffrag.ingest.fastapi_repo import CHECKOUT_ROOT, FASTAPI_TAG, expand_includes
+from docsrag.evals import QUESTIONS, load_questions
+from docsrag.ingest.fastapi_repo import CHECKOUT_ROOT, FASTAPI_TAG, expand_includes
 
 REPO = CHECKOUT_ROOT / FASTAPI_TAG
 QS = load_questions(QUESTIONS)
@@ -12,7 +12,7 @@ def test_ids_unique_and_fastapi_count():
     assert sum(q.source_type == "fastapi" for q in QS) == 25
 
 
-@pytest.mark.skipif(not REPO.exists(), reason=f"run `stuff sync fastapi` first ({REPO} missing)")
+@pytest.mark.skipif(not REPO.exists(), reason=f"run `docsrag sync fastapi` first ({REPO} missing)")
 @pytest.mark.parametrize("q", [q for q in QS if q.source_type == "fastapi"], ids=lambda q: q.id)
 def test_every_key_fact_is_in_the_gold_sources(q):
     # A key fact missing from its gold file means the question is wrong, not the pipeline.

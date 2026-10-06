@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from stuffrag import history
+from docsrag import history
 
 AWS = "AKIA" + "ABCDEFGHIJKLMNOP"
 
@@ -160,7 +160,7 @@ def test_merge_of_finds_the_merge_that_brought_a_branch_commit_in(repo):
 
 from typer.testing import CliRunner
 
-from stuffrag.config import PipelineConfig
+from docsrag.config import PipelineConfig
 
 
 def test_changes_prompt_has_messages_diffs_and_never_the_secret(repo, monkeypatch):
@@ -176,13 +176,13 @@ def test_changes_prompt_has_messages_diffs_and_never_the_secret(repo, monkeypatc
 
 
 def test_cli_changes_empty_range_exits_1(repo, monkeypatch):
-    from stuffrag import cli
+    from docsrag import cli
     monkeypatch.setattr(history, "ROOT", repo.parent)
     out = CliRunner().invoke(cli.app, ["changes", "app", "--since", "2030-01-01"])
     assert out.exit_code == 1 and "no commits" in out.output
 
 
-from stuffrag.retrieve import Hit
+from docsrag.retrieve import Hit
 
 
 def test_introducing_commit_is_the_first_not_the_latest(repo):

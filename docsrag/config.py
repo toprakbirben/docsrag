@@ -1,7 +1,7 @@
 import os
 from dataclasses import asdict, dataclass
 
-OLLAMA_URL = os.environ.get("STUFFRAG_OLLAMA", "http://localhost:11434")
+OLLAMA_URL = os.environ.get("DOCSRAG_OLLAMA", "http://localhost:11434")
 
 # Embedding dimension per Ollama model; one vector table per embedder.
 EMBEDDERS = {"bge-m3": 1024, "nomic-embed-text": 768}

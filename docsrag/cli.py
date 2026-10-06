@@ -1,7 +1,7 @@
 import typer
 from pathlib import Path
 
-from stuffrag import config, db
+from docsrag import config, db
 
 app = typer.Typer(no_args_is_help=True)
 db_app = typer.Typer()
@@ -24,7 +24,7 @@ def sync(source: str) -> None:
         return _sync_projects()
     if source != "fastapi":
         raise typer.BadParameter(f"unknown source {source!r}; available: fastapi, projects")
-    from stuffrag.ingest import fastapi_repo
+    from docsrag.ingest import fastapi_repo
 
     repo = fastapi_repo.checkout()
     docs, missing = fastapi_repo.collect(repo, fastapi_repo.FASTAPI_TAG)
@@ -38,7 +38,7 @@ def sync(source: str) -> None:
 
 
 def _sync_projects() -> None:
-    from stuffrag.ingest import projects
+    from docsrag.ingest import projects
 
     docs, skipped = projects.collect()
     for path in skipped:
@@ -53,7 +53,7 @@ def _sync_projects() -> None:
 
 
 def _index(cfg_name: str) -> None:
-    from stuffrag import embed
+    from docsrag import embed
 
     cfg = config.get(cfg_name)
     with db.connect() as conn:
@@ -72,7 +72,7 @@ def index_cmd(config_name: str = typer.Option("baseline", "--config")) -> None:
 def ask(question: str, config_name: str = typer.Option("baseline", "--config"),
         project: str = typer.Option(None, "--project", help="Search only this ~/projects folder.")) -> None:
     """Answer a question from indexed sources, with citations."""
-    from stuffrag import generate
+    from docsrag import generate
 
     with db.connect() as conn:
         answer = generate.ask(conn, question, config.get(config_name), project)
@@ -100,7 +100,7 @@ def changes(project: str, since: str = typer.Option("1 week ago", "--since"),
             until: str = typer.Option(None, "--until"),
             config_name: str = typer.Option("baseline", "--config")) -> None:
     """Explain what was added/removed/changed in a project, from diffs + commit/PR messages."""
-    from stuffrag import history
+    from docsrag import history
 
     try:
         rep = history.changes(project, since, until, config.get(config_name))
@@ -113,7 +113,7 @@ def changes(project: str, since: str = typer.Option("1 week ago", "--since"),
 @app.command()
 def why(project: str, topic: str, config_name: str = typer.Option("baseline", "--config")) -> None:
     """Find when and why something was added to a project, from the introducing commit/PR."""
-    from stuffrag import history
+    from docsrag import history
 
     try:
         with db.connect() as conn:
@@ -127,7 +127,7 @@ def why(project: str, topic: str, config_name: str = typer.Option("baseline", "-
 @eval_app.command("run")
 def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
     """Run all eval questions through a pipeline config and record metrics."""
-    from stuffrag import evals
+    from docsrag import evals
     import json
 
     with db.connect() as conn:
@@ -139,7 +139,7 @@ def eval_run(config_name: str = typer.Option("baseline", "--config")) -> None:
 def eval_compare(run_a: Path, run_b: Path) -> None:
     """Print metric deltas between two run files (B - A)."""
     import json
-    from stuffrag import evals
+    from docsrag import evals
 
     for line in evals.compare(json.loads(run_a.read_text()), json.loads(run_b.read_text())):
         typer.echo(line)
@@ -149,7 +149,7 @@ def eval_compare(run_a: Path, run_b: Path) -> None:
 def eval_spotcheck(run_file: Path, n: int = typer.Option(10, "--n")) -> None:
     """Show the first N judged answers and ask whether you agree with the judge (y/n)."""
     import json
-    from stuffrag import evals
+    from docsrag import evals
 
     questions = {q.id: q for q in evals.load_questions()}
     judged = [r for r in json.loads(run_file.read_text())["results"] if r["judge"] is not None][:n]

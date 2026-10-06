@@ -2,3 +2,4 @@
 __pycache__/
 .pytest_cache/
 evals/runs/*.json
+.DS_Store

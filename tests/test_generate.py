@@ -1,6 +1,6 @@
-from stuffrag import generate
-from stuffrag.config import PipelineConfig
-from stuffrag.retrieve import Hit
+from docsrag import generate
+from docsrag.config import PipelineConfig
+from docsrag.retrieve import Hit
 
 HITS = [Hit(12, "fastapi:a.md", "yield deps", 0.9), Hit(14, "fastapi:b.md", "cleanup", 0.8)]
 

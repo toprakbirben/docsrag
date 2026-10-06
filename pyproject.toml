@@ -1,5 +1,5 @@
 [project]
-name = "stuffrag"
+name = "docsrag"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-stuff = "stuffrag.cli:app"
+docsrag = "docsrag.cli:app"
 
 [dependency-groups]
 dev = ["pytest>=8"]

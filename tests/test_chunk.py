@@ -1,7 +1,7 @@
 import pytest
 
-from stuffrag import config
-from stuffrag.chunk import chunk, chunk_markdown, chunk_python, window
+from docsrag import config
+from docsrag.chunk import chunk, chunk_markdown, chunk_python, window
 
 
 def body_tokens(c: str) -> int:

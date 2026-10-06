@@ -1,6 +1,6 @@
-from stuffrag import retrieve
-from stuffrag.config import PipelineConfig
-from stuffrag.retrieve import Hit, rrf
+from docsrag import retrieve
+from docsrag.config import PipelineConfig
+from docsrag.retrieve import Hit, rrf
 
 
 def h(cid):

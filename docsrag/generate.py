@@ -4,8 +4,8 @@ from dataclasses import dataclass
 import httpx
 import psycopg
 
-from stuffrag.config import OLLAMA_URL, PipelineConfig
-from stuffrag.retrieve import Hit, retrieve
+from docsrag.config import OLLAMA_URL, PipelineConfig
+from docsrag.retrieve import Hit, retrieve
 
 REFUSAL = "Not found in my sources."
 NUM_CTX = 16384  # Ollama's default window would silently truncate top_k passages

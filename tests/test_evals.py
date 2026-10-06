@@ -1,5 +1,5 @@
-from stuffrag import evals
-from stuffrag.retrieve import Hit
+from docsrag import evals
+from docsrag.retrieve import Hit
 
 
 def h(cid, doc):
@@ -62,8 +62,8 @@ def test_compare_prints_deltas():
 def test_run_warms_up_reranker_before_the_timed_loop(tmp_path, monkeypatch):
     # cfg.rerank=True must load the model once before evaluate() is called for any
     # question, so the first question's latency doesn't include model load time.
-    from stuffrag.config import PipelineConfig
-    from stuffrag import rerank as rerank_mod
+    from docsrag.config import PipelineConfig
+    from docsrag import rerank as rerank_mod
 
     calls = []
     monkeypatch.setattr(evals, "index", lambda conn, cfg: None)
@@ -96,8 +96,8 @@ def test_run_warms_up_reranker_before_the_timed_loop(tmp_path, monkeypatch):
 
 
 def test_run_skips_warmup_when_rerank_is_off(tmp_path, monkeypatch):
-    from stuffrag.config import PipelineConfig
-    from stuffrag import rerank as rerank_mod
+    from docsrag.config import PipelineConfig
+    from docsrag import rerank as rerank_mod
 
     monkeypatch.setattr(evals, "index", lambda conn, cfg: None)
     monkeypatch.setattr(evals, "git_sha", lambda: "deadbee")
@@ -123,9 +123,9 @@ def test_run_skips_warmup_when_rerank_is_off(tmp_path, monkeypatch):
 
 
 def test_evaluate_records_context_chars_from_top_k_hits(monkeypatch):
-    from stuffrag.config import PipelineConfig
-    from stuffrag.generate import Answer
-    from stuffrag.retrieve import Hit
+    from docsrag.config import PipelineConfig
+    from docsrag.generate import Answer
+    from docsrag.retrieve import Hit
 
     hits = [Hit(1, "docA", "aaaa", 0.0), Hit(2, "docB", "bb", 0.0), Hit(3, "docC", "ccccccc", 0.0)]
     monkeypatch.setattr(evals, "retrieve", lambda conn, question, cfg: hits)

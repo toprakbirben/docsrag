@@ -1,4 +1,4 @@
-from stuffrag import embed
+from docsrag import embed
 
 
 def test_table_name_is_a_safe_identifier():

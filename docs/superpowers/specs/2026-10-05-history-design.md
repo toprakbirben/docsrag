@@ -1,7 +1,7 @@
-# Design: `stuff changes` / `stuff why` — explain what I added, from diffs + commit/PR messages
+# Design: `docsrag changes` / `docsrag why` — explain what I added, from diffs + commit/PR messages
 
 ## Context
-`stuff sync projects` (2026-10-05) lets stuffrag answer questions about the *current* code in `~/projects`. It knows history only as the last 15 commit subjects in each project's `__overview__`. Toprak wants to ask:
+`docsrag sync projects` (2026-10-05) lets docsrag answer questions about the *current* code in `~/projects`. It knows history only as the last 15 commit subjects in each project's `__overview__`. Toprak wants to ask:
 1. **What changed in a period:** "what did I add to fuutball last week?"
 2. **When and why was X added:** "when did I add rate limiting to fuutball, and why?"
 3. Answers that **combine the commit/PR message with the actual diff** to say what was added, removed or changed, and where the two disagree.
@@ -12,8 +12,8 @@ Uncommitted work is out of scope. PR descriptions come from GitHub via `gh`: rea
 Git and code do every lookup (commit selection, date ranges, finding the introducing commit). The LLM only explains (Rule 5). Historical diffs are never written to the database. History can still contain secrets that current files no longer have (committed, then removed), so keeping it out of the index keeps the exposure small. Rejected: indexing every commit as a document. Retrieval can't return "everything in a date range" completely, and it would store old diffs.
 
 ## Commands
-- `stuff changes <project> [--since "1 week ago"] [--until <date>]`
-- `stuff why <project> "<topic>"`
+- `docsrag changes <project> [--since "1 week ago"] [--until <date>]`
+- `docsrag why <project> "<topic>"`
 
 `<project>` is a folder name under `~/projects`. A project skipped by `SKIP_PROJECTS`, or one without `.git`, is a clear error.
 
@@ -46,8 +46,8 @@ Unknown project, no `.git`, or an empty range each produce a plain message and e
 - `why` finds the commit that introduced a line, not a later one that touched the file.
 - The prompt sent to the LLM contains messages and diffs and never contains the omitted secret.
 
-Manual check: `stuff changes fuutball --since 2026-09-20 --until 2026-09-23` (PR #123 tactics/stamina) and `stuff changes mtt --since 2026-07-01 --until 2026-07-31` (CRDT work), judged against the actual commits.
+Manual check: `docsrag changes fuutball --since 2026-09-20 --until 2026-09-23` (PR #123 tactics/stamina) and `docsrag changes mtt --since 2026-07-01 --until 2026-07-31` (CRDT work), judged against the actual commits.
 
 ## Files
-- new `stuffrag/history.py`, `tests/test_history.py`
-- edit `stuffrag/cli.py` (2 commands)
+- new `docsrag/history.py`, `tests/test_history.py`
+- edit `docsrag/cli.py` (2 commands)

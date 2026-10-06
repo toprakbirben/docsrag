@@ -4,10 +4,10 @@ import subprocess
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from stuffrag.config import PipelineConfig
-from stuffrag.generate import chat
-from stuffrag.ingest.projects import ROOT, SKIP_PROJECTS, _allowed, is_secret
-from stuffrag.retrieve import retrieve
+from docsrag.config import PipelineConfig
+from docsrag.generate import chat
+from docsrag.ingest.projects import ROOT, SKIP_PROJECTS, _allowed, is_secret
+from docsrag.retrieve import retrieve
 
 COMMIT_CAP = 6_000   # floor of filtered-diff chars per commit (a commit gets more if the total allows)
 TOTAL_CAP = 40_000   # chars of diff across all commits sent to the LLM

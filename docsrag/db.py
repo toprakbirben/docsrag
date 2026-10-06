@@ -3,7 +3,7 @@ import os
 import psycopg
 from psycopg.types.json import Jsonb
 
-DSN = os.environ.get("STUFFRAG_DSN", "postgresql://stuff:stuff@localhost:5433/stuffrag")
+DSN = os.environ.get("DOCSRAG_DSN", "postgresql://docsrag:docsrag@localhost:5433/docsrag")
 
 # Dimension is per-embedder, so vectors live in one table per embedder (created in embed.py).
 SCHEMA = """

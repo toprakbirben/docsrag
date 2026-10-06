@@ -2,7 +2,7 @@ import json
 
 from typer.testing import CliRunner
 
-from stuffrag.cli import app
+from docsrag.cli import app
 
 
 def test_spotcheck_counts_agreement_and_skips_unjudged(tmp_path):

@@ -4,8 +4,8 @@ from collections.abc import Callable
 import httpx
 import psycopg
 
-from stuffrag.chunk import chunk
-from stuffrag.config import EMBEDDERS, OLLAMA_URL, PipelineConfig
+from docsrag.chunk import chunk
+from docsrag.config import EMBEDDERS, OLLAMA_URL, PipelineConfig
 
 # (document prefix, query prefix) for models trained with task prefixes.
 PREFIX = {"nomic-embed-text": ("search_document: ", "search_query: ")}

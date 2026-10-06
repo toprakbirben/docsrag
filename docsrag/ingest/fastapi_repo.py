@@ -4,7 +4,7 @@ from pathlib import Path
 
 FASTAPI_TAG = "0.115.12"
 REPO_URL = "https://github.com/fastapi/fastapi.git"
-CHECKOUT_ROOT = Path.home() / ".stuffrag" / "fastapi"
+CHECKOUT_ROOT = Path.home() / ".docsrag" / "fastapi"
 # mkdocs include forms used by FastAPI docs; paths are relative to docs/en/.
 # {* path hl[...] *}   -- the primary "snippet" form
 # {!path!} / {!> path!} -- mkdocs-include-markdown forms (the '>' variant is common in the repo)

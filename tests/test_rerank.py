@@ -1,6 +1,6 @@
 import sentence_transformers
 
-from stuffrag import rerank as rerank_mod
+from docsrag import rerank as rerank_mod
 
 
 def test_model_loads_local_files_only_with_pinned_revision(monkeypatch):

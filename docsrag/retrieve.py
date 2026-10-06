@@ -2,8 +2,8 @@ from dataclasses import dataclass, replace
 
 import psycopg
 
-from stuffrag.config import PipelineConfig
-from stuffrag.embed import embed, table, to_pgvector
+from docsrag.config import PipelineConfig
+from docsrag.embed import embed, table, to_pgvector
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ def rrf(rankings: list[list[Hit]], k: int = 60) -> list[Hit]:
 
 
 def rerank(query: str, hits: list[Hit]) -> list[Hit]:
-    from stuffrag.rerank import rerank as _rerank  # lazy: loads torch only when rerank is on
+    from docsrag.rerank import rerank as _rerank  # lazy: loads torch only when rerank is on
 
     return _rerank(query, hits)
 

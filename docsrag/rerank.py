@@ -1,7 +1,7 @@
 from dataclasses import replace
 from functools import cache
 
-from stuffrag.retrieve import Hit
+from docsrag.retrieve import Hit
 
 MODEL = "BAAI/bge-reranker-v2-m3"
 # Pinned to the commit already cached under
