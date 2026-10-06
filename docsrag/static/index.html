@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docsrag</title>
+<script src="/static/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #faf9f5; --side: #f0eee6; --fg: #29261b; --muted: #73726c; --line: #e5e2d9;
+    --bubble: #ece9df; --card: #ffffff; --accent: #c96442; --warn: #a15c07; --err: #b42318; --code: #f3f1ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #262624; --side: #1f1e1d; --fg: #ece9e1; --muted: #a3a097; --line: #3a3936;
+      --bubble: #3a3935; --card: #30302e; --accent: #d97757; --warn: #f2b84b; --err: #f97066; --code: #1f1e1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 ui-sans-serif, system-ui, sans-serif; display: flex; }
+
+  #sidebar { width: 260px; flex: 0 0 260px; background: var(--side); border-right: 1px solid var(--line);
+             display: flex; flex-direction: column; height: 100%; }
+  #sidebar header { padding: 14px 14px 8px; font-weight: 600; font-size: 16px; }
+  #new { margin: 4px 10px 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+         color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  #new:hover { border-color: var(--accent); }
+  #convs { overflow-y: auto; flex: 1; padding: 0 6px 12px; }
+  #convs .label { font-size: 12px; color: var(--muted); padding: 8px 8px 4px; }
+  #convs a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--fg); text-decoration: none;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  #convs a:hover { background: var(--bubble); }
+  #convs a.on { background: var(--bubble); font-weight: 500; }
+
+  #main { flex: 1; display: flex; flex-direction: column; height: 100%; min-width: 0; }
+  #top { display: none; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  #top button { background: none; border: 0; color: var(--fg); font-size: 20px; cursor: pointer; }
+  #scroll { flex: 1; overflow-y: auto; }
+  #thread { max-width: 760px; margin: 0 auto; padding: 28px 16px 24px; }
+  #empty { text-align: center; color: var(--muted); margin-top: 18vh; }
+  #empty h2 { color: var(--fg); font-weight: 500; font-size: 26px; margin: 0 0 8px; font-family: ui-serif, Georgia, serif; }
+
+  .msg { margin: 0 0 22px; }
+  .user { display: flex; justify-content: flex-end; }
+  .user .b { background: var(--bubble); padding: 10px 14px; border-radius: 16px; max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .assistant .b { overflow-wrap: anywhere; }
+  .assistant .b > :first-child { margin-top: 0; }
+  .assistant .b > :last-child { margin-bottom: 0; }
+  .assistant .b h1, .assistant .b h2, .assistant .b h3 { font-size: 16px; margin: 16px 0 6px; }
+  .assistant .b pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+  .assistant .b code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code); padding: 1px 4px; border-radius: 4px; }
+  .assistant .b pre code { padding: 0; background: none; }
+  .assistant.refused .b { color: var(--warn); }
+  .assistant.error .b { color: var(--err); }
+  .route { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .route span { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  details { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  details summary { cursor: pointer; }
+  details ul { margin: 6px 0 0; padding-left: 18px; }
+  .thinking { color: var(--muted); font-size: 14px; }
+  .thinking::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+                      margin-right: 8px; animation: pulse 1.2s infinite ease-in-out; }
+  @keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
+
+  #composer { padding: 0 16px 18px; }
+  #box { max-width: 760px; margin: 0 auto; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+         padding: 10px 12px 8px; box-shadow: 0 1px 6px rgb(0 0 0 / .05); }
+  #box:focus-within { border-color: var(--muted); }
+  #input { width: 100%; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; max-height: 220px; }
+  #bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+  #config { font: 12px inherit; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }
+  #send { width: 32px; height: 32px; border: 0; border-radius: 9px; background: var(--accent); color: #fff; font-size: 17px; cursor: pointer; }
+  #send:disabled { opacity: .4; cursor: default; }
+  #hint { max-width: 760px; margin: 6px auto 0; font-size: 12px; color: var(--muted); text-align: center; }
+
+  @media (max-width: 760px) {
+    #sidebar { position: fixed; z-index: 2; left: 0; top: 0; transform: translateX(-100%); transition: transform .2s; }
+    body.side-open #sidebar { transform: none; box-shadow: 0 0 30px rgb(0 0 0 / .25); }
+    #top { display: flex; }
+  }
+</style>
+</head>
+<body>
+<nav id="sidebar">
+  <header>docsrag</header>
+  <button id="new" type="button">+ New chat</button>
+  <div id="convs"></div>
+</nav>
+<div id="main">
+  <div id="top"><button id="menu" type="button" aria-label="Chats">☰</button><strong>docsrag</strong></div>
+  <div id="scroll"><div id="thread"></div></div>
+  <div id="composer">
+    <form id="box">
+      <textarea id="input" rows="1" placeholder="Ask about FastAPI or your projects, what changed, or why something exists…"></textarea>
+      <div id="bar">
+        <select id="config" aria-label="Pipeline config">
+          <option>baseline</option><option>hybrid</option><option>hybrid_rerank</option>
+        </select>
+        <button id="send" type="submit" aria-label="Send">↑</button>
+      </div>
+    </form>
+    <div id="hint">Answers come only from your indexed sources and git history. Enter to send, Shift+Enter for a new line.</div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const thread = $("thread"), input = $("input"), send = $("send"), convsEl = $("convs"), scroll = $("scroll");
+let current = null, busy = false;
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// Model output can quote HTML from indexed files: show it as text, never render it.
+marked.use({ renderer: { html: t => esc(typeof t === "string" ? t : t.text) } });
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function routeLabel(r) {
+  if (!r || r.mode === "clarify") return null;
+  const parts = [r.mode];
+  if (r.project) parts.push(r.project);
+  if (r.mode === "changes") parts.push(`since ${r.since}${r.until ? " until " + r.until : ""}`);
+  if (r.mode === "why") parts.push(r.topic);
+  if (r.mode === "ask" && r.question) parts.push(`“${r.question}”`);
+  return parts.join(" · ");
+}
+
+function list(title, items) {
+  const d = el("details");
+  d.append(el("summary", null, `${title} (${items.length})`));
+  const ul = el("ul");
+  items.forEach(t => { const li = el("li"); li.append(el("code", null, t)); ul.append(li); });
+  d.append(ul);
+  return d;
+}
+
+function renderMsg(m) {
+  if (m.role === "user") {
+    const w = el("div", "msg user");
+    w.append(el("div", "b", m.content));
+    return w;
+  }
+  const p = m.payload || {};
+  const w = el("div", "msg assistant" + (p.refused ? " refused" : "") + (p.error ? " error" : ""));
+  const label = routeLabel(p.route);
+  if (label) {
+    const r = el("div", "route");
+    r.append(el("span", null, label));
+    w.append(r);
+  }
+  const b = el("div", "b");
+  b.innerHTML = marked.parse(m.content);
+  w.append(b);
+  if (p.sources && p.sources.length) w.append(list("Sources", p.sources.map(s => `[c${s.chunk_id}] ${s.document_id}`)));
+  if (p.commits && p.commits.length) w.append(list("Commits", p.commits.map(c =>
+    `${c.sha.slice(0, 7)} ${c.date} ${c.subject}${c.pr_number ? ` [PR #${c.pr_number}]` : ""}`)));
+  if (p.notes && p.notes.length) w.append(list("Notes", p.notes));
+  return w;
+}
+
+function showEmpty() {
+  thread.innerHTML = "";
+  const e = el("div");
+  e.id = "empty";
+  e.append(el("h2", null, "What do you want to know?"));
+  e.append(el("div", null, "Try “How do FastAPI dependencies with yield clean up?”, “What changed in mtt last week?” or “Why does fuutball use Celery?”"));
+  thread.append(e);
+}
+
+const bottom = () => scroll.scrollTop = scroll.scrollHeight;
+
+async function loadConvs() {
+  const r = await fetch("/api/conversations");
+  const convs = r.ok ? await r.json() : [];
+  convsEl.innerHTML = "";
+  if (convs.length) convsEl.append(el("div", "label", "Recents"));
+  convs.forEach(c => {
+    const a = el("a", c.id === current ? "on" : "", c.title);
+    a.href = `#c${c.id}`;
+    convsEl.append(a);
+  });
+}
+
+async function open(id) {
+  current = id;
+  document.body.classList.remove("side-open");
+  if (!id) { showEmpty(); loadConvs(); input.focus(); return; }
+  const r = await fetch(`/api/conversations/${id}`);
+  if (!r.ok) { location.hash = ""; return; }
+  const c = await r.json();
+  thread.innerHTML = "";
+  c.messages.forEach(m => thread.append(renderMsg(m)));
+  loadConvs();
+  bottom();
+}
+
+function fromHash() {
+  const m = location.hash.match(/^#c(\d+)$/);
+  const id = m ? Number(m[1]) : null;
+  if (id !== current || !id) open(id);
+}
+window.addEventListener("hashchange", fromHash);
+
+async function submit() {
+  const message = input.value.trim();
+  if (!message || busy) return;
+  busy = true; send.disabled = true;
+  if (!current) thread.innerHTML = "";
+  thread.append(renderMsg({ role: "user", content: message }));
+  input.value = ""; grow();
+  const wait = el("div", "msg thinking");
+  thread.append(wait); bottom();
+  const t0 = Date.now();
+  const tick = () => wait.textContent = `Thinking… ${Math.round((Date.now() - t0) / 1000)}s`;
+  tick();
+  const timer = setInterval(tick, 1000);
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, conversation_id: current, config: $("config").value }),
+    });
+    const body = await r.json().catch(() => ({ detail: `Server error (HTTP ${r.status}). Check the docsrag serve terminal.` }));
+    if (!r.ok) {
+      wait.replaceWith(renderMsg({ role: "assistant", content: String(body.detail), payload: { error: true } }));
+    } else {
+      wait.replaceWith(renderMsg(body.message));
+      if (!current) { current = body.conversation_id; history.replaceState(null, "", `#c${current}`); }
+      loadConvs();
+    }
+  } catch (err) {
+    wait.replaceWith(renderMsg({ role: "assistant", content: "Request failed: " + err.message, payload: { error: true } }));
+  } finally {
+    clearInterval(timer);
+    busy = false; send.disabled = false;
+    bottom(); input.focus();
+  }
+}
+
+function grow() { input.style.height = "auto"; input.style.height = input.scrollHeight + "px"; }
+input.addEventListener("input", grow);
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+});
+$("box").addEventListener("submit", e => { e.preventDefault(); submit(); });
+$("new").onclick = () => location.hash.length > 1 ? (location.hash = "") : open(null);  // hashchange opens it
+$("menu").onclick = () => document.body.classList.toggle("side-open");
+fromHash();
+</script>
+</body>
+</html>

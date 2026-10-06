@@ -50,6 +50,14 @@ uv run docsrag changes myproject --since "2 weeks ago"
 uv run docsrag why myproject "API rate limiting"
 ```
 
+Web chat (local only): one chat box, and the model decides whether a message is a docs question, a
+"what changed" or a "why". Follow-ups use earlier turns, and conversations are saved in the sidebar.
+
+```bash
+uv run docsrag db init                  # once, adds the conversations/messages tables
+uv run docsrag serve                    # then open http://127.0.0.1:8000
+```
+
 Evaluation:
 
 ```bash
@@ -89,7 +97,7 @@ not the pipeline.
 ## Tests
 
 ```bash
-uv run pytest    # 159 tests
+uv run pytest    # 178 tests
 ```
 
 ## Stack
